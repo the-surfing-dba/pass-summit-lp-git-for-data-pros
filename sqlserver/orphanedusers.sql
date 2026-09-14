@@ -8,7 +8,6 @@
       2. For each SQL user, re-links to a login with the same name if one
          exists (ALTER USER ... WITH LOGIN =).
       3. Emits DROP/CREATE LOGIN scaffolding for any that still have no match.
-
     Run inside the target user database (USE <db>) as a sysadmin or db_owner
     with ALTER ANY USER + control on the server for the login DDL.
 */
