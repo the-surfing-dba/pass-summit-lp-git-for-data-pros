@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# Secrets & credentials  --  the #1 thing data pros accidentally commit.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.publishsettings
+appsettings.*.json
+!appsettings.example.json
+secrets.json
+credentials
+*.credential
+
+# ---------------------------------------------------------------------------
+# Database artifacts  --  don't version backups, data dumps, or local DBs.
+# ---------------------------------------------------------------------------
+*.bak
+*.trn
+*.bacpac
+*.dacpac
+*.mdf
+*.ldf
+*.ndf
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+data/
+dumps/
+
+# ---------------------------------------------------------------------------
+# Terraform
+#   - .terraform/ holds downloaded provider binaries (100s of MB) — never commit.
+#   - *.tfstate can contain secrets in plaintext — never commit.
+#   - .terraform.lock.hcl IS committed on purpose (pins provider versions).
+# ---------------------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+
+# ---------------------------------------------------------------------------
+# Tooling / OS noise
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+__pycache__/
+.venv/
