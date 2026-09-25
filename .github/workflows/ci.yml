@@ -1,0 +1,128 @@
+# =============================================================================
+#  CI for a data-team repo.
+#
+#  What this demonstrates on stage:
+#    - A PR to `main` triggers automated checks (the "status checks" that a
+#      branch protection rule can REQUIRE before merge).
+#    - Secret scanning catches a committed password before it reaches main.
+#    - Lint/validate gates for SQL, PowerShell, and Terraform.
+#    - The `deploy` job shows WHY self-hosted runners exist: cloud-hosted
+#      runners can't reach a private database, so the deploy step runs on a
+#      runner that lives inside your network.
+#
+#  Nothing here needs cloud credentials to run the PR checks — only the
+#  (disabled) deploy job does.
+# =============================================================================
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Secret scan — fail the PR if a credential got committed.
+  #    Ties directly to the "storing secrets" part of the talk.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # 2. SQL lint — catch obvious problems in *.sql before review.
+  # ---------------------------------------------------------------------------
+  sql-lint:
+    name: SQL lint (sqlfluff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install sqlfluff
+        run: pip install sqlfluff==3.*
+      - name: Lint T-SQL and MySQL scripts
+        # `|| true` keeps the demo green even with intentionally messy scripts.
+        # Remove it in a real repo so the check actually gates the PR.
+        run: |
+          sqlfluff lint sqlserver --dialect tsql || true
+          sqlfluff lint mysql --dialect mysql || true
+
+  # ---------------------------------------------------------------------------
+  # 3. PowerShell lint — PSScriptAnalyzer on the .ps1 scripts.
+  # ---------------------------------------------------------------------------
+  powershell-lint:
+    name: PowerShell lint (PSScriptAnalyzer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $issues = Invoke-ScriptAnalyzer -Path ./powershell -Recurse -Severity Warning,Error
+          $issues | Format-Table -AutoSize
+          if ($issues | Where-Object Severity -eq 'Error') {
+              throw "PSScriptAnalyzer found errors."
+          }
+
+  # ---------------------------------------------------------------------------
+  # 4. Terraform — fmt + validate. No cloud creds needed for validate.
+  # ---------------------------------------------------------------------------
+  terraform-validate:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: terraform fmt (check)
+        run: terraform fmt -check -recursive
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+      - name: terraform validate
+        run: terraform validate
+
+  # ---------------------------------------------------------------------------
+  # 5. Deploy — the "why self-hosted runners exist" job.
+  #
+  #    This runs ONLY on merge to main and ONLY on a runner that lives inside
+  #    your network, because a GitHub-hosted runner cannot reach a private
+  #    SQL endpoint (10.x behind a VNet/VPC). Left disabled for the demo.
+  #
+  #    To enable: register a self-hosted runner with label `db-network`,
+  #    create a protected `prod` environment, then flip the `if:` below.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy migrations (self-hosted)
+    needs: [secret-scan, sql-lint, powershell-lint, terraform-validate]
+    if: false # <-- flip to: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: [self-hosted, db-network]
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply SQL migrations against the private instance
+        shell: pwsh
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }} # e.g. prod-sqlmi.internal
+          SQL_DB: ${{ secrets.SQL_DB }}
+        run: |
+          Write-Host "Running on a self-hosted runner inside the DB network."
+          Write-Host "A github.com-hosted runner could not reach $env:SQL_SERVER."
+          # Invoke-Sqlcmd -ServerInstance $env:SQL_SERVER -Database $env:SQL_DB `
+          #   -InputFile ./sqlserver/orphanedusers.sql -TrustServerCertificate

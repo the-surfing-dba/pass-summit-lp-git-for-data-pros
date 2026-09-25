@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# Secrets & credentials  --  the #1 thing data pros accidentally commit.
+# Demo point: show `git status` BEFORE this file exists, then add it.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.publishsettings
+appsettings.*.json
+!appsettings.example.json
+secrets.json
+credentials
+*.credential
+
+# ---------------------------------------------------------------------------
+# Database artifacts  --  don't version backups, data dumps, or local DBs.
+# ---------------------------------------------------------------------------
+*.bak
+*.trn
+*.bacpac
+*.dacpac
+*.mdf
+*.ldf
+*.ndf
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+data/
+dumps/
+
+# ---------------------------------------------------------------------------
+# Terraform  --  state holds secrets in plaintext; never commit it.
+# ---------------------------------------------------------------------------
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+
+# ---------------------------------------------------------------------------
+# Tooling / OS noise
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+__pycache__/
+.venv/
