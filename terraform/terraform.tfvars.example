@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in — terraform.tfvars is .gitignored so it
+# never gets committed. The password is intentionally NOT here: set it via an
+# environment variable instead so it never lands on disk in the repo:
+#
+#   PowerShell:  $env:TF_VAR_sql_admin_password = 'S0me-Str0ng-Pass!'
+#   bash:        export TF_VAR_sql_admin_password='S0me-Str0ng-Pass!'
+#
+# Or pull it from a vault at plan/apply time (preferred for real environments).
+
+project           = "passdemo"
+environment       = "dev"
+location          = "eastus2"
+sql_admin_login   = "sqladmin"
+database_name     = "YoMomma"
+sku_name          = "Basic"
+max_size_gb       = 2
+client_ip_address = "203.0.113.10" # your public IP

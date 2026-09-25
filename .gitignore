@@ -1,5 +1,6 @@
 # ---------------------------------------------------------------------------
 # Secrets & credentials  --  the #1 thing data pros accidentally commit.
+# Demo point: show `git status` BEFORE this file exists, then add it.
 # ---------------------------------------------------------------------------
 .env
 .env.*
@@ -33,12 +34,10 @@ data/
 dumps/
 
 # ---------------------------------------------------------------------------
-# Terraform
-#   - .terraform/ holds downloaded provider binaries (100s of MB) — never commit.
-#   - *.tfstate can contain secrets in plaintext — never commit.
-#   - .terraform.lock.hcl IS committed on purpose (pins provider versions).
+# Terraform  --  state holds secrets in plaintext; never commit it.
 # ---------------------------------------------------------------------------
 .terraform/
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfvars

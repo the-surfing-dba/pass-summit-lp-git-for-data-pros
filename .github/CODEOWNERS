@@ -1,0 +1,24 @@
+# CODEOWNERS — GitHub requests these reviewers automatically on a PR and,
+# combined with a branch protection rule ("require review from Code Owners"),
+# BLOCKS merging until the right person approves.
+#
+# Demo point: change a file below in a branch, open a PR, and watch GitHub
+# auto-assign the reviewer. This is how a data team stops someone from
+# merging a schema or infra change without the DBA / platform owner seeing it.
+#
+# Syntax:  <path pattern>   <@owner> [@owner2 ...]
+# Replace the placeholder handles with real GitHub usernames/teams before use.
+
+# Everything, by default
+*                       @the-surfing-dba
+
+# Database change owners
+/sqlserver/             @the-surfing-dba
+/mysql/                 @the-surfing-dba
+/mongo/                 @the-surfing-dba
+
+# Infrastructure needs an extra set of eyes — highest blast radius
+/terraform/             @the-surfing-dba
+
+# CI/CD and repo policy changes
+/.github/               @the-surfing-dba
