@@ -50,6 +50,7 @@ git reflog -5                       # local history of everywhere HEAD has been 
 # LESSON: run  git branch --show-current  BEFORE you commit.
 #endregion
 
+git push origin demo/struggle1
 
 #region  STRUGGLE 2  —  git add .  sweeps in junk (big files / secrets)
 # ---------------------------------------------------------------------------
