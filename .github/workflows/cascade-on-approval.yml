@@ -1,0 +1,86 @@
+# =============================================================================
+#  One approval, all the way to main.
+#
+#  Fires when a "-> prerelease" PR is APPROVED. In a single job (because a bot's
+#  GITHUB_TOKEN merge does NOT trigger downstream push/pull_request workflows) it:
+#    1. merges the approved feature PR into prerelease,
+#    2. secret-scans the merged prerelease tip and stamps the required
+#       "Secret scan (gitleaks)" status on that commit,
+#    3. opens and merges the prerelease -> main promote PR.
+#
+#  main keeps its required gitleaks check but needs 0 approvals — the single
+#  human review happened at the prerelease gate, and it cascades from there.
+# =============================================================================
+name: Cascade approved feature to main
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cascade:
+    if: >-
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'prerelease' &&
+      github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge to prerelease, scan, promote to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 1) merge the approved feature PR into prerelease (approval satisfies protection)
+          gh pr merge "$PR" --repo "$REPO" --merge
+
+          # 2) resolve the new prerelease tip (this is the promote PR's head commit)
+          sha=$(gh api "repos/$REPO/git/ref/heads/prerelease" --jq '.object.sha')
+          echo "prerelease tip = $sha"
+
+          # 3) secret-scan the merged tip; stamp the required status on that SHA.
+          #    --no-git scans the working tree (not full history) and honours .gitleaks.toml.
+          git fetch --quiet origin prerelease
+          git checkout --quiet "$sha"
+          if docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+               detect --source=/repo --no-git --no-banner --redact; then
+            st=success; desc="no secrets found"
+          else
+            st=failure; desc="secrets detected - promotion blocked"
+          fi
+          gh api -X POST "repos/$REPO/statuses/$sha" \
+            -f state="$st" -f context="Secret scan (gitleaks)" -f description="$desc" >/dev/null
+          if [ "$st" != success ]; then
+            echo "gitleaks failed on the prerelease tip; not promoting to main."
+            exit 1
+          fi
+
+          # 4) open (if needed) and merge the promote PR prerelease -> main
+          num=$(gh pr list --repo "$REPO" --base main --head prerelease --state open --json number --jq '.[0].number')
+          if [ -z "$num" ]; then
+            gh pr create --repo "$REPO" --base main --head prerelease \
+              --title "Promote prerelease -> main" \
+              --body "Auto-promote after approval of #$PR."
+            num=$(gh pr list --repo "$REPO" --base main --head prerelease --state open --json number --jq '.[0].number')
+          fi
+          for i in $(seq 1 12); do
+            state=$(gh pr view "$num" --repo "$REPO" --json mergeStateStatus --jq '.mergeStateStatus')
+            echo "promote #$num mergeStateStatus=$state"
+            case "$state" in
+              CLEAN|UNSTABLE|HAS_HOOKS) gh pr merge "$num" --repo "$REPO" --merge && exit 0 ;;
+              DIRTY|DRAFT) echo "promote not mergeable ($state)"; exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "timed out waiting for the promote PR to become mergeable"; exit 1
