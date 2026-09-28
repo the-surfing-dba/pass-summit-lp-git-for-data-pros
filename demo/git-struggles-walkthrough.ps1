@@ -51,43 +51,52 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #endregion
 
 
-#region  STRUGGLE 2  —  keeping a secret out of main (server-side, zero local setup)
+#region  STRUGGLE 2  —  push protection blocks a real secret (server-side, zero local setup)
 # ---------------------------------------------------------------------------
-# CONCEPT: git will happily COMMIT a secret, and a feature-branch PUSH often
-#   won't stop you either. What actually protects main is configured ONCE in the
-#   GitHub UI and applies to EVERYONE — nothing to install per developer:
-#     * Secret scanning + Push protection      (Settings > Code security)
-#     * A required 'Secret scan (gitleaks)' check on PRs   (Settings > Branches)
+# CONCEPT: git will COMMIT a secret without complaint. GitHub PUSH PROTECTION
+#   stops it at the SERVER the instant you push — no hook to install, just a repo
+#   Setting (Settings > Code security > Secret scanning > Push protection).
+#   Push protection only fires on RECOGNIZED, VALID tokens, so this demo uses a
+#   REAL, throwaway GitHub token that you REVOKE right after. (A fabricated token
+#   slips past push protection — the required gitleaks check below is the net for that.)
+
+# 1) Generate a throwaway PAT: https://github.com/settings/tokens
+#    -> "Generate new token (classic)" -> no scopes -> Generate -> copy it.
+# 2) Paste it into $demoPat below AT RUNTIME (it lives in your terminal, NOT in
+#    this committed file — never commit the placeholder with a real value):
+$demoPat = 'ghp_PASTE_A_THROWAWAY_TOKEN_HERE'
 
 git switch main
 git switch -c struggle2
 
-# a real file you want + a leaked token you don't, and gut .gitignore so nothing
-# local hides it (simulates a repo with no .gitignore, or one someone cleaned up):
+# a real file you want + the leaked token you don't, and gut .gitignore so nothing local hides it:
 Set-Content -Path demo-import.sql -Value '-- real work here'
-Set-Content -Path demo.credential -Value 'GITHUB_TOKEN=ghp_FAKEdemoTOKENdoNOTuse0123456789abcde'
+Set-Content -Path demo.credential -Value "GITHUB_TOKEN=$demoPat"
 (Get-Content .gitignore) | Where-Object { $_ -notin '*.credential' } | Set-Content .gitignore
 
 git add .
 git commit -m 'demo: add import tool'   # SUCCEEDS — git NEVER blocks a secret locally
 git show --stat HEAD                     # demo.credential is now baked into the commit
 
-# Push the branch — this is where SERVER-SIDE protection kicks in:
+# Push — PUSH PROTECTION rejects it at the server (nothing reaches the remote):
 git push -u origin struggle2
-#   * A RECOGNIZED token (a real AWS/GitHub key) is rejected right here by PUSH
-#     PROTECTION:  remote: - GITHUB PUSH PROTECTION ... (GH013) push cannot contain secrets.
-#   * Our fabricated token slips past push protection — but it STILL can't reach main:
-gh pr create --base main --head struggle2 --fill
-#   The PR's required 'Secret scan (gitleaks)' check FAILS (red X), so the Merge
-#   button is DISABLED. The secret is physically unable to land on main — and you
-#   did NOT have to install a single hook; it's all repo Settings.
+# ^ remote: error: GH013: Repository rule violations found for refs/heads/struggle2.
+#   remote: - GITHUB PUSH PROTECTION
+#   remote:   —— GitHub Personal Access Token ——————————————————
+#   remote:    locations: commit <sha>, path demo.credential:1
+#   remote:   (to push anyway you must give a bypass reason — don't, for a real secret)
+#   The secret PHYSICALLY could not be pushed. No hook installed — just repo Settings.
 
-# FIX: strip the secret from the branch, restore .gitignore, push -> the check goes green.
-git checkout main -- .gitignore         # bring back the real ignore rules
+# FIX: remove the secret, restore .gitignore, and — CRITICAL — REVOKE the token.
 git rm --cached demo.credential         # untrack it (stays on disk, now ignored again)
+git checkout main -- .gitignore         # bring back the real ignore rules
 git commit -m 'demo: remove leaked secret'
-git push                                # gitleaks re-runs on the PR -> green -> mergeable
-# ROTATE the credential regardless — once pushed ANYWHERE, treat it as compromised.
+#  -> then REVOKE it: https://github.com/settings/tokens  (delete the token you just used)
+#  Once a real secret is pushed ANYWHERE it is compromised — rotation is the only true fix.
+
+# BACKSTOP: push protection only catches RECOGNIZED tokens. The required
+# 'Secret scan (gitleaks)' check on PRs (Settings > Branches) catches the rest —
+# fabricated tokens, generic passwords — and blocks the merge into main.
 #endregion
 
 
