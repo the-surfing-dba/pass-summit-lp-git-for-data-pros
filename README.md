@@ -169,3 +169,5 @@ This is a teaching repo. Passwords, IPs, and server names are placeholders or
 intentional anti-patterns. Do not run these scripts against production without
 review, and never commit real secrets — that's the whole point of the
 `secrets/` and `.gitignore` demos.
+
+<!-- cascade test 1790633669 -->
