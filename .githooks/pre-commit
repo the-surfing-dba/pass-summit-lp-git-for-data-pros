@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# pre-commit — the guardrail that ACTUALLY stops a bad commit.
+#
+# git itself never blocks a commit over a secret or a big file — a commit is
+# purely local. This hook does: it inspects the STAGED files and rejects the
+# commit if any of them look like a credential or are too large. It fires even
+# when .gitignore was bypassed (git add -f) or deleted, which is the whole point.
+#
+# Activate it (once per clone):  git config core.hooksPath .githooks
+set -euo pipefail
+
+# Demo threshold. Real-world: GitHub hard-rejects files over 100 MB on push.
+MAX_BYTES=$((1 * 1024 * 1024))   # 1 MB
+
+# Filenames that are almost always a secret and should never be committed.
+SECRET_RE='(\.credential$|\.pem$|\.key$|\.pfx$|\.p12$|(^|/)\.env(\..*)?$|(^|/)id_rsa$|(^|/)secrets?\.json$)'
+
+fail=0
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ -f "$f" ] || continue   # skip deletions
+
+    if printf '%s' "$f" | grep -Eiq "$SECRET_RE"; then
+        echo "BLOCKED (secret):     $f  — looks like a credential file; do not commit it."
+        fail=1
+    fi
+
+    size=$(wc -c < "$f" | tr -d '[:space:]')
+    if [ "$size" -gt "$MAX_BYTES" ]; then
+        echo "BLOCKED (large file): $f  — ${size} bytes (> ${MAX_BYTES}); keep binaries out of git."
+        fail=1
+    fi
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+if [ "$fail" -ne 0 ]; then
+    echo ""
+    echo "Commit REJECTED by .githooks/pre-commit. Unstage the offending file(s) and retry:"
+    echo "    git restore --staged <file>"
+    echo "Emergency bypass (you then own the leak):  git commit --no-verify"
+    exit 1
+fi
+exit 0
