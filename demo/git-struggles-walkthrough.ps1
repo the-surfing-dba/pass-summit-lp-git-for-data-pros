@@ -252,6 +252,45 @@ gh pr create --base main --head demo/pr-ui --web
 #endregion
 
 
+#region  BONUS  —  visualizing history: the commit graph (CLI + UI)
+# ---------------------------------------------------------------------------
+# CONCEPT: branches and merges are hard to reason about as a flat list. A GRAPH
+#          shows how commits connect — where branches split and where they merged
+#          back. Read-only: nothing below changes the repo.
+
+## COMMAND LINE — git log --graph
+git --no-pager log --graph --oneline --all --decorate -20
+#   --graph     draws the ASCII branch/merge lines on the left
+#   --oneline   one commit per line (short hash + subject)
+#   --all       every branch, not just the one you're on
+#   --decorate  show branch/tag/HEAD labels (on by default in modern git)
+#   -20         cap at 20 commits so it fits on screen
+#   (dropped 'git --no-pager' opens the pager 'less' — press q to quit, / to search)
+
+# A richer, colorized one-liner worth aliasing (call it 'git lg'):
+git --no-pager log --graph --all --decorate `
+    --pretty=format:'%C(auto)%h%d %s %C(dim)(%an, %ar)%C(reset)' -20
+# Make it permanent so you just type  git lg :
+#   git config --global alias.lg "log --graph --all --decorate --pretty=format:'%C(auto)%h%d %s %C(dim)(%an, %ar)%C(reset)'"
+
+# Contrast: the graph shows COMMITS; the reflog shows every MOVE of HEAD
+# (switch/commit/reset/merge) — your local audit trail, even for "lost" commits:
+git --no-pager reflog -15
+
+## IN THE UI — three ways, no terminal
+#   1. BUILT-IN (no extension): open Source Control (Ctrl/Cmd+Shift+G). The
+#      "Source Control Graph" section renders the branch/merge graph; click a
+#      commit to see its diff. If hidden: SCM title-bar ... menu -> enable Graph.
+#   2. GIT GRAPH extension (mhutchie.git-graph): adds a "Git Graph" button in the
+#      Source Control title bar -> full interactive railroad graph; right-click a
+#      commit to checkout / branch / revert / cherry-pick.
+#   3. GITLENS extension: "Commit Graph" view with author lanes, search, and
+#      rich hovers showing who/when/why for each commit.
+# TALK TIP: run the CLI graph first (works anywhere, even over SSH), then flip to
+#           the UI graph for the same history — same data, prettier picture.
+#endregion
+
+
 #region  CLEANUP  —  remove everything this demo created
 # ---------------------------------------------------------------------------
 git switch main
