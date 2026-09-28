@@ -13,12 +13,10 @@ appsettings.*.json
 !appsettings.example.json
 secrets.json
 credentials
-*.credential
 
 # ---------------------------------------------------------------------------
 # Database artifacts  --  don't version backups, data dumps, or local DBs.
 # ---------------------------------------------------------------------------
-*.bak
 *.trn
 *.bacpac
 *.dacpac
