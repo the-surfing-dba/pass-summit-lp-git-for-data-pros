@@ -1,33 +1,34 @@
 <#
-    Apply-BranchProtection — lock down `main` on the demo repo using the GitHub
-    REST API via the `gh` CLI. Run this LIVE on stage to show how the CI jobs
-    and CODEOWNERS turn into an enforced merge gate.
+    Apply-BranchProtection — lock down the demo repo's release branches using the
+    GitHub REST API via `gh`. Run it LIVE on stage to show how one approval on
+    `prerelease` cascades to `main` (see the workflows in .github/workflows/).
 
-    What it enforces on `main`:
-      - Pull request required before merge (no direct pushes).
-      - 1 approving review, and a Code Owner review (uses .github/CODEOWNERS).
-      - Stale approvals dismissed when new commits land.
-      - Required status checks (the CI jobs) must pass and be up to date.
-      - Rules also apply to admins (enforce_admins).
-      - No force-pushes, no branch deletion.
+    What it enforces:
+      main:
+        - Pull request required before merge (no direct pushes).
+        - The gitleaks secret-scan status check must pass.
+        - 0 approvals — the single human review already happened at prerelease.
+        - No force-pushes, no deletion.
+      prerelease:
+        - Pull request required before merge, with 1 approving review — the one
+          human gate the cascade fans out from.
+        - Force-push + deletion allowed so demo/reset-demoscript.ps1 can realign
+          it back to main.
 
     Requires: gh CLI, authenticated with `gh auth login` and repo admin rights.
-    Verify the check names match the `name:` of each job in
-    .github/workflows/ci.yml — those strings ARE the status check contexts.
+    The check name(s) must match the `name:` of the required job in
+    .github/workflows/ci.yml — that string IS the status-check context.
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param
     (
         [string] $Repo   = 'the-surfing-dba/pass-summit-lp-git-for-data-pros',
-        [string] $Branch = 'main',
 
-        # Must match the `name:` of each required job in ci.yml.
+        # Must match the `name:` of the required job in ci.yml. Only gitleaks is
+        # a REQUIRED check on main — the lint jobs run but don't gate the merge.
         [string[]] $RequiredChecks = @(
-            'Secret scan (gitleaks)',
-            'SQL lint (sqlfluff)',
-            'PowerShell lint (PSScriptAnalyzer)',
-            'Terraform fmt + validate'
+            'Secret scan (gitleaks)'
         )
     )
 
@@ -39,56 +40,82 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue))
 
 <#######################################
  #######################################
-   Build the protection payload
+   Build the per-branch protection payloads
  #######################################
  #######################################>
-$body = [ordered]@{
+# main: require a PR + the gitleaks check, but 0 approvals — the review already
+#       happened at the prerelease gate and cascaded here.
+$mainBody = [ordered]@{
     required_status_checks = [ordered]@{
-        strict   = $true          # branch must be up to date before merge
+        strict   = $false         # up-to-date not required (prerelease descends from main)
         contexts = $RequiredChecks
     }
-    enforce_admins = $true
+    enforce_admins = $false       # admins can still bootstrap/repair
     required_pull_request_reviews = [ordered]@{
-        dismiss_stale_reviews           = $true
-        require_code_owner_reviews      = $true
-        required_approving_review_count = 1
+        dismiss_stale_reviews           = $false
+        require_code_owner_reviews      = $false
+        required_approving_review_count = 0
     }
-    restrictions          = $null # no user/team push allowlist
-    allow_force_pushes    = $false
-    allow_deletions       = $false
-    required_linear_history = $true
+    restrictions       = $null
+    allow_force_pushes = $false
+    allow_deletions    = $false
 }
 
-$json = $body | ConvertTo-Json -Depth 6
+# prerelease: the single human gate — a PR + 1 approval. Force-push/delete stay
+#             open so the reset script can realign it back to main.
+$preBody = [ordered]@{
+    required_status_checks = $null
+    enforce_admins = $false
+    required_pull_request_reviews = [ordered]@{
+        dismiss_stale_reviews           = $false
+        require_code_owner_reviews      = $false
+        required_approving_review_count = 1
+    }
+    restrictions       = $null
+    allow_force_pushes = $true
+    allow_deletions    = $true
+}
 
 <#######################################
  #######################################
-   Apply it
+   Apply it to both branches
  #######################################
  #######################################>
-if ($PSCmdlet.ShouldProcess("$Repo@$Branch", "Apply branch protection"))
+$targets = @(
+    [pscustomobject]@{ Branch = 'main';       Body = $mainBody },
+    [pscustomobject]@{ Branch = 'prerelease'; Body = $preBody }
+)
+
+foreach ($t in $targets)
     {
-        try
+        $json = $t.Body | ConvertTo-Json -Depth 6
+        if ($PSCmdlet.ShouldProcess("$Repo@$($t.Branch)", "Apply branch protection"))
             {
-                $json | gh api `
-                    --method PUT `
-                    -H "Accept: application/vnd.github+json" `
-                    "repos/$Repo/branches/$Branch/protection" `
-                    --input -
-                Write-Host "Branch protection applied to $Repo@$Branch." -ForegroundColor Green
-            }
-        catch
-            {
-                Write-Error "Failed to apply branch protection: $($_.Exception.Message)"
-                throw
-            }  # end try/catch (apply)
-    }  # end if (ShouldProcess)
+                try
+                    {
+                        $json | gh api `
+                            --method PUT `
+                            -H "Accept: application/vnd.github+json" `
+                            "repos/$Repo/branches/$($t.Branch)/protection" `
+                            --input -
+                        Write-Host "Branch protection applied to $Repo@$($t.Branch)." -ForegroundColor Green
+                    }
+                catch
+                    {
+                        Write-Error "Failed to apply branch protection to $($t.Branch): $($_.Exception.Message)"
+                        throw
+                    }  # end try/catch (apply $($t.Branch))
+            }  # end if (ShouldProcess $($t.Branch))
+    }  # end foreach (target)
 
 <#######################################
  #######################################
    Show the result
  #######################################
  #######################################>
-Write-Host "`nCurrent protection on ${Branch}:" -ForegroundColor Cyan
-gh api "repos/$Repo/branches/$Branch/protection" `
-    --jq '{required_reviews: .required_pull_request_reviews.required_approving_review_count, code_owner_reviews: .required_pull_request_reviews.require_code_owner_reviews, checks: .required_status_checks.contexts, enforce_admins: .enforce_admins.enabled}'
+foreach ($b in 'main', 'prerelease')
+    {
+        Write-Host "`nCurrent protection on ${b}:" -ForegroundColor Cyan
+        gh api "repos/$Repo/branches/$b/protection" `
+            --jq '{required_reviews: .required_pull_request_reviews.required_approving_review_count, checks: .required_status_checks.contexts, strict: .required_status_checks.strict, force_pushes: .allow_force_pushes.enabled}'
+    }  # end foreach (show)
