@@ -6,9 +6,9 @@
     mid-merge-conflict or left a stray commit on main. It:
       * aborts any in-progress merge/rebase/cherry-pick
       * switches to main and hard-resets it to origin/main
-      * closes any open demo/* PRs
+      * closes any open demo PRs (by branch name)
       * deletes ALL remote branches except the keep-list (main + prerelease)
-      * deletes every local demo/* branch
+      * deletes the local demo branches (struggle1, struggle2, bigfile, conflict-*, pr-ui)
       * removes the demo-* / demo.credential scratch files at the repo root
 
     It will REFUSE to run unless origin points at this demo repo, so a stray
@@ -20,6 +20,7 @@
 $ErrorActionPreference = 'Stop'
 $RepoSlug = 'pass-summit-lp-git-for-data-pros'
 $KeepBranches = @('main', 'prerelease')   # remote branches this script NEVER deletes
+$DemoBranches = @('struggle1', 'struggle2', 'bigfile', 'conflict-base', 'conflict-a', 'conflict-b', 'pr-ui')
 
 # --- Move to the repo root (works no matter where you invoke it from) --------
 $repoRoot = git rev-parse --show-toplevel 2>$null
@@ -64,11 +65,11 @@ git fetch --prune origin
 git reset --hard origin/main
 Write-Host "  main reset to origin/main" -ForegroundColor Green
 
-# --- 3. Close any open demo/* PRs and delete their branches ------------------
+# --- 3. Close any open demo PRs (by branch name) and delete their branches ---
 if (Get-Command gh -ErrorAction SilentlyContinue)
     {
         $openPrs = gh pr list --state open --json number,headRefName | ConvertFrom-Json
-        foreach ($pr in ($openPrs | Where-Object { $_.headRefName -like 'demo/*' }))
+        foreach ($pr in ($openPrs | Where-Object { $_.headRefName -in $DemoBranches }))
             {
                 Write-Host "  closing PR #$($pr.number) ($($pr.headRefName))" -ForegroundColor Yellow
                 gh pr close $pr.number --delete-branch 2>$null
@@ -91,21 +92,20 @@ foreach ($b in $remoteBranches)
         git push origin --delete $b 2>$null   # protected main will refuse — harmless
     }  # end foreach (remote branch)
 
-# --- 5. Delete local demo/* branches -----------------------------------------
-$localDemo = git branch --list 'demo/*' | ForEach-Object { $_.TrimStart('*', ' ').Trim() }
-foreach ($b in $localDemo)
+# --- 5. Delete local demo branches (by name) ---------------------------------
+foreach ($b in $DemoBranches)
     {
-        if ($b)
+        if (git branch --list $b)
             {
                 Write-Host "  deleting local branch $b" -ForegroundColor Yellow
                 git branch -D $b 2>$null
-            }  # end if ($b)
-    }  # end foreach (local demo branch)
+            }  # end if (branch exists)
+    }  # end foreach (demo branch)
 
 # --- 6. Remove scratch files (repo root only, demo-* / demo.credential) ------
 $scratch = @(
     'demo-query.sql', 'demo-import.sql', 'demo.credential', 'demo-backup.bak',
-    'demo-hotfix.sql', 'demo-huge.bak', 'demo-grants.sql', 'demo-pr.sql'
+    'demo-huge.bak', 'demo-grants.sql', 'demo-pr.sql'
 )
 Remove-Item -Path $scratch -Force -ErrorAction SilentlyContinue
 # belt-and-suspenders: any stray demo-*.sql / demo-*.bak left at the root
