@@ -22,11 +22,12 @@ jobs:
       - name: Create PR into prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
         run: |
-          existing=$(gh pr list --base prerelease --head "$BRANCH" --state open --json number --jq '.[0].number')
+          existing=$(gh pr list --repo "$REPO" --base prerelease --head "$BRANCH" --state open --json number --jq '.[0].number')
           if [ -z "$existing" ]; then
-            gh pr create --base prerelease --head "$BRANCH" \
+            gh pr create --repo "$REPO" --base prerelease --head "$BRANCH" \
               --title "Merge $BRANCH -> prerelease" \
               --body "Auto-opened from a push to $BRANCH. Approve this PR to cascade it into prerelease and then main."
           else
