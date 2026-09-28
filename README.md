@@ -106,15 +106,19 @@ git clone https://github.com/the-surfing-dba/pass-summit-lp-git-for-data-pros.gi
 cd pass-summit-lp-git-for-data-pros
 ```
 
-Keep secrets out of `main` — all in the GitHub UI, nothing to install per developer:
+Keep secrets out of `main` — layered, because no single control catches everything:
 
-1. **Secret scanning + push protection:** Settings → Code security → enable
-   **Secret scanning** and **Push protection** (blocks recognized tokens on push).
-2. **Required secret-scan check:** Settings → Branches → protect `main` →
+1. **Local git hooks (catch plain passwords too):** `git config core.hooksPath .githooks`.
+   `.githooks/pre-commit` and `pre-push` reject credential-named files (e.g. `*.credential`)
+   and oversized files by NAME/SIZE — so they stop a bare SQL password that scanners miss.
+2. **Secret scanning + push protection:** Settings → Code security → enable both
+   (blocks *recognized* tokens like AWS/GitHub keys on push — not generic passwords).
+3. **Required secret-scan check:** Settings → Branches → protect `main` →
    **Require status checks to pass** → select **Secret scan (gitleaks)** (from
-   `.github/workflows/ci.yml`). A secret then fails the PR and blocks the merge.
-3. **Require review:** same rule → **Require a pull request before merging** →
-   **Require approvals**.
+   `.github/workflows/ci.yml`). Fails the PR and blocks the merge.
+4. **Require review:** same rule → **Require a pull request before merging** → **Require approvals**.
+5. **Best of all — don't commit it:** pull secrets from env/Key Vault (see
+   `secrets/Get-DbSecret.ps1`) and `.gitignore` the files that hold them.
 
 See the `secrets` section of `demo/git-struggles-walkthrough.ps1` for the live demo.
 
