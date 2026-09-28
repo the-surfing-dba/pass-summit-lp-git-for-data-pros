@@ -163,6 +163,29 @@ and a pull request:
 | `hotfix/`     | Urgent production fix                       |
 | `experiment/` | Throwaway spike / tuning                    |
 
+## Automated promotion (feature → prerelease → main)
+
+The `.github/workflows/` pipeline turns **one approval** into a merge to `main`:
+
+1. **Push** a `feature/*` (or `bugfix/`, `hotfix/`, `experiment/`) branch — a bot
+   opens a PR into `prerelease` for you (`open-pr-to-prerelease.yml`).
+2. **Approve** that PR. Because the *bot* authored it, a solo maintainer can
+   approve it — GitHub only blocks approving your *own* PR.
+3. The **cascade** (`cascade-on-approval.yml`) merges it into `prerelease`,
+   secret-scans the result, then opens and merges the `prerelease → main`
+   promote PR — with no second approval.
+
+Branch protection that makes this safe:
+
+| Branch                                        | Requires                                                        |
+| --------------------------------------------- | --------------------------------------------------------------- |
+| `prerelease`                                   | a PR + **1 approval** — the single human gate                   |
+| `main`                                         | a PR + the **gitleaks** secret-scan check, **0 approvals**      |
+
+The one approval at `prerelease` is the only human sign-off before code reaches
+`main`; the secret scan still gates the final merge. Run
+`demo/reset-demoscript.ps1` to return the repo to a clean state after a demo.
+
 ## Security note
 
 This is a teaching repo. Passwords, IPs, and server names are placeholders or

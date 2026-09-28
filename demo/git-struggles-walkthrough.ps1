@@ -265,6 +265,46 @@ git --no-pager reflog -15
 #endregion
 
 
+#region  AUTOMATION  —  one approval, feature -> prerelease -> main (the payoff)
+# ---------------------------------------------------------------------------
+# CONCEPT: everything above was DOING git by hand. This is what the talk builds
+#          toward: push a feature branch, approve ONE PR, and it flows to main by
+#          itself — secret-scanned on the way. Two workflows in .github/workflows/
+#          do it:
+#            open-pr-to-prerelease.yml  - a BOT opens your PR into prerelease
+#            cascade-on-approval.yml    - on approval: merge -> scan -> promote
+#          Branch protection: prerelease needs 1 approval (the human gate); main
+#          needs 0 approvals + the gitleaks check (the approval already happened).
+# NOTE: this is the ONE region that reaches main. It uses a timestamped filename
+#       so you can re-run it in rehearsal without colliding.
+
+# 1) make a change on a feature/* branch and push it
+git switch main
+$auto = "demo-auto-$(Get-Date -Format yyyyMMddHHmmss).sql"
+git switch -c feature/demo-automation
+Set-Content -Path $auto -Value 'SELECT 1 AS automated;'
+git add $auto
+git commit -m 'demo: automated promotion'
+git push -u origin feature/demo-automation
+#   ^ the push triggers open-pr-to-prerelease.yml -> a BOT opens a PR into prerelease.
+
+# 2) find the bot-opened PR — the author is github-actions, so YOU can approve it
+gh pr list --base prerelease --head feature/demo-automation
+#   You can't approve your OWN PR — but the BOT authored this one, so your
+#   approval counts. That's the trick that lets a solo maintainer still gate.
+
+# 3) approve it — and watch it cascade all the way to main, hands-off
+gh pr review feature/demo-automation --approve -b 'ship it'
+#   cascade-on-approval.yml now: merges feature -> prerelease, secret-scans the
+#   tip, opens the prerelease -> main promote PR, and merges it. No second click.
+
+# 4) confirm it landed on main (give the cascade ~30-60s)
+gh run list --workflow=cascade-on-approval.yml --limit 1
+git fetch origin; git --no-pager log --oneline -3 origin/main
+#   your file is now on main — from one push and one approval.
+#endregion
+
+
 #region  CLEANUP  —  remove everything this demo created
 # ---------------------------------------------------------------------------
 git switch main
@@ -273,10 +313,13 @@ git switch main
 gh pr close pr-ui --delete-branch
 
 # delete local demo branches (‑D because some hold un-merged demo commits)
-git branch -D struggle1 struggle2 bigfile conflict-base conflict-a conflict-b pr-ui
+git branch -D struggle1 struggle2 bigfile conflict-base conflict-a conflict-b pr-ui feature/demo-automation
 
 # remove the scratch files (all uniquely named demo-* / demo.credential)
 Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
+Remove-Item demo-auto-*.sql -ErrorAction SilentlyContinue
+#  the automation finale's file is also on origin/main (proof it worked); run
+#  demo/reset-demoscript.ps1 or delete it via a quick PR if you want main pristine.
 
 git status                          # back to clean
 #endregion
