@@ -6,7 +6,8 @@
     mid-merge-conflict or left a stray commit on main. It:
       * aborts any in-progress merge/rebase/cherry-pick
       * switches to main and hard-resets it to origin/main
-      * closes any open demo PRs (by branch name)
+      * realigns the remote 'prerelease' branch back to main
+      * closes ALL open PRs (feature->prerelease and promote PRs the cascade opens)
       * deletes ALL remote branches except the keep-list (main + prerelease)
       * deletes the local demo branches (struggle1, struggle2, bigfile, conflict-*, pr-ui)
       * removes the demo-* / demo.credential scratch files at the repo root
@@ -65,15 +66,21 @@ git fetch --prune origin
 git reset --hard origin/main
 Write-Host "  main reset to origin/main" -ForegroundColor Green
 
-# --- 3. Close any open demo PRs (by branch name) and delete their branches ---
+# --- 2b. Realign the remote prerelease branch back to main -------------------
+#     prerelease allows force-push for exactly this; keeps the cascade's start
+#     point clean so the next feature->prerelease PR opens against a fresh base.
+git push origin "origin/main:refs/heads/prerelease" --force 2>$null
+Write-Host "  prerelease realigned to main" -ForegroundColor Green
+
+# --- 3. Close ALL open PRs (the cascade opens bot PRs into prerelease + main) -
 if (Get-Command gh -ErrorAction SilentlyContinue)
     {
         $openPrs = gh pr list --state open --json number,headRefName | ConvertFrom-Json
-        foreach ($pr in ($openPrs | Where-Object { $_.headRefName -in $DemoBranches }))
+        foreach ($pr in $openPrs)
             {
                 Write-Host "  closing PR #$($pr.number) ($($pr.headRefName))" -ForegroundColor Yellow
-                gh pr close $pr.number --delete-branch 2>$null
-            }  # end foreach (open demo PR)
+                gh pr close $pr.number 2>$null
+            }  # end foreach (open PR)
     }
 else
     {
