@@ -19,7 +19,9 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    # prerelease too: stamps the required 'Secret scan (gitleaks)' status on the
+    # commit the promote PR uses, so it passes without an --admin bypass.
+    branches: [main, prerelease]
 
 permissions:
   contents: read
