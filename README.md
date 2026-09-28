@@ -106,16 +106,17 @@ git clone https://github.com/the-surfing-dba/pass-summit-lp-git-for-data-pros.gi
 cd pass-summit-lp-git-for-data-pros
 ```
 
-Activate the local git hooks (blocks committing/pushing secrets and large files):
+Keep secrets out of `main` — all in the GitHub UI, nothing to install per developer:
 
-```powershell
-git config core.hooksPath .githooks
-```
+1. **Secret scanning + push protection:** Settings → Code security → enable
+   **Secret scanning** and **Push protection** (blocks recognized tokens on push).
+2. **Required secret-scan check:** Settings → Branches → protect `main` →
+   **Require status checks to pass** → select **Secret scan (gitleaks)** (from
+   `.github/workflows/ci.yml`). A secret then fails the PR and blocks the merge.
+3. **Require review:** same rule → **Require a pull request before merging** →
+   **Require approvals**.
 
-The `.githooks/pre-commit` hook rejects credential-named files and oversized
-blobs before they enter a commit; `.githooks/pre-push` catches them at push time
-too (even if a commit was made with `--no-verify`). See the `secrets` section of
-`demo/git-struggles-walkthrough.ps1` for the live demo.
+See the `secrets` section of `demo/git-struggles-walkthrough.ps1` for the live demo.
 
 Validate the Terraform locally (same as CI):
 

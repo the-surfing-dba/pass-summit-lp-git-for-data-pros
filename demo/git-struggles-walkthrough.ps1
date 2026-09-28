@@ -51,71 +51,43 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #endregion
 
 
-#region  STRUGGLE 2  —  git add .  sweeps in junk (big files / secrets)
+#region  STRUGGLE 2  —  keeping a secret out of main (server-side, zero local setup)
 # ---------------------------------------------------------------------------
-# CONCEPT: `git add .` stages EVERYTHING untracked. This is how a secret or a
-#          219 MB binary sneaks into a commit.
+# CONCEPT: git will happily COMMIT a secret, and a feature-branch PUSH often
+#   won't stop you either. What actually protects main is configured ONCE in the
+#   GitHub UI and applies to EVERYONE — nothing to install per developer:
+#     * Secret scanning + Push protection      (Settings > Code security)
+#     * A required 'Secret scan (gitleaks)' check on PRs   (Settings > Branches)
 
 git switch main
 git switch -c struggle2
 
-# The file you WANT...
+# a real file you want + a leaked token you don't, and gut .gitignore so nothing
+# local hides it (simulates a repo with no .gitignore, or one someone cleaned up):
 Set-Content -Path demo-import.sql -Value '-- real work here'
-# ...plus junk you do NOT: a leaked GitHub personal access token (PAT) + a 5 MB "backup"
-Set-Content -Path demo.credential -Value 'GITHUB_TOKEN=ghp_FAKEdemoTOKENdoNOTuse0123456789abcde'   # fake PAT — the hook blocks it by FILENAME (*.credential), not by reading this value
-$bytes = [byte[]]::new(5 * 1024 * 1024)
-(New-Object Random).NextBytes($bytes)
-[System.IO.File]::WriteAllBytes("$PWD/demo-backup.bak", $bytes)
+Set-Content -Path demo.credential -Value 'GITHUB_TOKEN=ghp_FAKEdemoTOKENdoNOTuse0123456789abcde'
+(Get-Content .gitignore) | Where-Object { $_ -notin '*.credential' } | Set-Content .gitignore
 
-# THE MISTAKE, on purpose: gut the .gitignore so it no longer excludes secrets/
-# backups (simulates a repo with no .gitignore, or one someone "cleaned up").
-# Strip the *.credential and *.bak rules:
-(Get-Content .gitignore) | Where-Object { $_ -notin '*.credential', '*.bak' } | Set-Content .gitignore
-git check-ignore -v demo.credential demo-backup.bak   # NO output now = nothing is protecting them
-
-# git add .  now sweeps in EVERYTHING untracked — secret included:
 git add .
-git status -s                        # -s = short format: one line per file with a two-letter code (XY)
-# ^ demo.credential and demo-backup.bak are STAGED ('A') next to your real file.
+git commit -m 'demo: add import tool'   # SUCCEEDS — git NEVER blocks a secret locally
+git show --stat HEAD                     # demo.credential is now baked into the commit
 
-# NOW TRY TO COMMIT — and watch it FAIL. git itself never blocks a commit over a
-# secret (a commit is purely local), so the guardrail is a pre-commit HOOK:
-# .githooks/pre-commit inspects the staged files and rejects credentials + big
-# blobs — even though we just gutted .gitignore. Activate it once per clone:
-#     git config core.hooksPath .githooks
-git commit -m 'demo: add import tool'
-# ^ REJECTED by the hook (exit code 1 — nothing gets committed):
-#     BLOCKED (large file): demo-backup.bak  — 5242880 bytes (> 1048576); keep binaries out of git.
-#     BLOCKED (secret):     demo.credential  — looks like a credential file; do not commit it.
-#     Commit REJECTED by .githooks/pre-commit.
+# Push the branch — this is where SERVER-SIDE protection kicks in:
+git push -u origin struggle2
+#   * A RECOGNIZED token (a real AWS/GitHub key) is rejected right here by PUSH
+#     PROTECTION:  remote: - GITHUB PUSH PROTECTION ... (GH013) push cannot contain secrets.
+#   * Our fabricated token slips past push protection — but it STILL can't reach main:
+gh pr create --base main --head struggle2 --fill
+#   The PR's required 'Secret scan (gitleaks)' check FAILS (red X), so the Merge
+#   button is DISABLED. The secret is physically unable to land on main — and you
+#   did NOT have to install a single hook; it's all repo Settings.
 
-# FIX: unstage the junk (it stays on disk), restore .gitignore, commit the real file only.
-git restore --staged demo.credential demo-backup.bak   # unstage the secret + big file
-git checkout main -- .gitignore                        # bring back the real ignore rules
-git status -s                                          # only demo-import.sql is staged now
-git commit -m 'demo: add import tool'                  # hook passes -> commit SUCCEEDS
-git show --stat HEAD                                   # only demo-import.sql is in the commit
-
-# SECOND LINE OF DEFENSE — make the PUSH fail. The commit hook is CLIENT-SIDE and
-# can be skipped with --no-verify. The pre-push hook (.githooks/pre-push) scans the
-# COMMITS you're about to push and rejects the whole push. Watch it block:
-git add -f demo.credential demo-backup.bak            # force past .gitignore again
-git commit --no-verify -m 'sneak the secret past the commit hook'   # pre-commit SKIPPED -> commit succeeds
-git push -u origin struggle2                         # pre-push scans the commit and REJECTS:
-# ^ BLOCKED (large file): demo-backup.bak  — 5242880 bytes (> 1048576) in a pushed commit.
-#   BLOCKED (secret):     demo.credential  — credential file in a pushed commit; do not push it.
-#   Push REJECTED by .githooks/pre-push.   (nothing reached the server)
-
-# RECOVER: the secret is in your COMMIT, not just the working tree — rewrite it out:
-git reset --soft HEAD~1                               # undo the --no-verify commit, keep changes staged
-git restore --staged demo.credential demo-backup.bak # unstage the junk
-git checkout main -- .gitignore                       # ignore rules back
-#   (if it had already been PUSHED/shared: ROTATE the secret, then scrub with
-#    git filter-repo / BFG — you cannot un-leak it.)
-
-# WHY BOTH HOOKS + THE SERVER: pre-commit stops you early, pre-push stops a
-# --no-verify bypass, and server-side guards (GitHub push protection -> GH013,
-# ci.yml gitleaks) catch anyone who never ran  git config core.hooksPath .githooks .
+# FIX: strip the secret from the branch, restore .gitignore, push -> the check goes green.
+git checkout main -- .gitignore         # bring back the real ignore rules
+git rm --cached demo.credential         # untrack it (stays on disk, now ignored again)
+git commit -m 'demo: remove leaked secret'
+git push                                # gitleaks re-runs on the PR -> green -> mergeable
+# ROTATE the credential regardless — once pushed ANYWHERE, treat it as compromised.
 #endregion
 
 
@@ -131,7 +103,7 @@ $bytes = [byte[]]::new(5 * 1024 * 1024)
 (New-Object Random).NextBytes($bytes)
 [System.IO.File]::WriteAllBytes("$PWD/demo-huge.bak", $bytes)
 git add -f demo-huge.bak            # -f forces past .gitignore — exactly the mistake that bit you
-git commit --no-verify -m 'demo: oops, committed a backup'   # --no-verify skips our own pre-commit hook so we can show the SERVER-side 100 MB reject
+git commit -m 'demo: oops, committed a backup'
 # If you pushed a >100 MB file, GitHub answers with:
 #   remote: error: File demo-huge.bak is 219.17 MB; this exceeds GitHub's file size limit of 100.00 MB
 #   remote: error: GH001: Large files detected.
@@ -294,7 +266,7 @@ gh pr close pr-ui --delete-branch
 git branch -D struggle1 struggle2 bigfile conflict-base conflict-a conflict-b pr-ui
 
 # remove the scratch files (all uniquely named demo-* / demo.credential)
-Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-backup.bak, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
+Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
 
 git status                          # back to clean
 #endregion
