@@ -40,4 +40,5 @@ DECLARE @verify nvarchar(max) = N'RESTORE VERIFYONLY FROM '
     + N'WITH CHECKSUM;';
 
 PRINT @verify;
+SELECT @verify; 
 EXEC sp_executesql @verify;
