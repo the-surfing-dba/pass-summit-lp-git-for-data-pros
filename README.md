@@ -106,6 +106,17 @@ git clone https://github.com/the-surfing-dba/pass-summit-lp-git-for-data-pros.gi
 cd pass-summit-lp-git-for-data-pros
 ```
 
+Activate the local git hooks (blocks committing/pushing secrets and large files):
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+The `.githooks/pre-commit` hook rejects credential-named files and oversized
+blobs before they enter a commit; `.githooks/pre-push` catches them at push time
+too (even if a commit was made with `--no-verify`). See the `secrets` section of
+`demo/git-struggles-walkthrough.ps1` for the live demo.
+
 Validate the Terraform locally (same as CI):
 
 ```powershell
