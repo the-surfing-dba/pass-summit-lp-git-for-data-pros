@@ -14,17 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create or update PR
+      - name: Create or update PR and arm auto-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          existing=$(gh pr list --base main --head prerelease --state open --json number --jq '.[0].number')
-          if [ -z "$existing" ]; then
+          num=$(gh pr list --base main --head prerelease --state open --json number --jq '.[0].number')
+          if [ -z "$num" ]; then
             gh pr create \
               --base main \
               --head prerelease \
               --title "Promote prerelease -> main" \
               --body "Auto-generated PR from prerelease. Latest commit: ${{ github.sha }}"
+            num=$(gh pr list --base main --head prerelease --state open --json number --jq '.[0].number')
           else
-            echo "PR #$existing already open; new commits are included automatically."
+            echo "PR #$num already open; new commits are included automatically."
           fi
+          # Native auto-merge: GitHub merges the instant the required gitleaks
+          # check passes AND a reviewer approves. No admin bypass, no PAT.
+          gh pr merge "$num" --auto --merge
