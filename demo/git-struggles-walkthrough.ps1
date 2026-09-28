@@ -60,11 +60,11 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #   REAL, throwaway GitHub token that you REVOKE right after. (A fabricated token
 #   slips past push protection — the required gitleaks check below is the net for that.)
 
-# 1) Generate a throwaway PAT: https://github.com/settings/tokens
-#    -> "Generate new token (classic)" -> no scopes -> Generate -> copy it.
-# 2) Paste it into $demoPat below AT RUNTIME (it lives in your terminal, NOT in
-#    this committed file — never commit the placeholder with a real value):
-$demoPat = 'ghp_PASTE_A_THROWAWAY_TOKEN_HERE'
+# Mint a REAL, 1-hour GitHub App installation token (ghs_...) to trigger push
+# protection. Real tokens are what push protection actually blocks; this one
+# AUTO-EXPIRES in an hour, so there's nothing to revoke. See demo/Get-DemoToken.ps1
+# for the ONE-TIME GitHub App setup (and set $env:GH_DEMO_APP_ID / GH_DEMO_APP_KEY).
+$demoPat = ./demo/Get-DemoToken.ps1
 
 git switch main
 git switch -c struggle2
@@ -82,16 +82,16 @@ git show --stat HEAD                     # demo.credential is now baked into the
 git push -u origin struggle2
 # ^ remote: error: GH013: Repository rule violations found for refs/heads/struggle2.
 #   remote: - GITHUB PUSH PROTECTION
-#   remote:   —— GitHub Personal Access Token ——————————————————
+#   remote:   —— GitHub App Installation Access Token ——————————
 #   remote:    locations: commit <sha>, path demo.credential:1
 #   remote:   (to push anyway you must give a bypass reason — don't, for a real secret)
 #   The secret PHYSICALLY could not be pushed. No hook installed — just repo Settings.
 
-# FIX: remove the secret, restore .gitignore, and — CRITICAL — REVOKE the token.
+# FIX: remove the secret, restore .gitignore. (The ghs_ token auto-expires in an
+# hour — nothing to revoke here. For a REAL leaked secret you'd ROTATE it now.)
 git rm --cached demo.credential         # untrack it (stays on disk, now ignored again)
 git checkout main -- .gitignore         # bring back the real ignore rules
 git commit -m 'demo: remove leaked secret'
-#  -> then REVOKE it: https://github.com/settings/tokens  (delete the token you just used)
 #  Once a real secret is pushed ANYWHERE it is compromised — rotation is the only true fix.
 
 # BACKSTOP: push protection only catches RECOGNIZED tokens. The required
