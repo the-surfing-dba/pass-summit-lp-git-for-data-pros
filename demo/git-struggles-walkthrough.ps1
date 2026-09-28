@@ -75,38 +75,32 @@ git check-ignore -v demo.credential demo-backup.bak   # NO output now = nothing 
 
 # git add .  now sweeps in EVERYTHING untracked — secret included:
 git add .
-git status -s                        # -s = short format: one line per file with a two-letter code (XY), instead of the verbose paragraphs
-# ^ demo.credential and demo-backup.bak are now STAGED ('A') next to your real
-#   file. This is exactly how a credential leaks into a repo.
+git status -s                        # -s = short format: one line per file with a two-letter code (XY)
+# ^ demo.credential and demo-backup.bak are STAGED ('A') next to your real file.
 
-# Execute the commit — it SUCCEEDS, and the secret is baked into history:
-git commit -m 'demo: oops, committed a secret and a backup'
-git show --stat HEAD                 # the commit contains demo.credential + demo-backup.bak
-git log -p -1 -- demo.credential     # the plaintext password is right there in the diff
+# NOW TRY TO COMMIT — and watch it FAIL. git itself never blocks a commit over a
+# secret (a commit is purely local), so the guardrail is a pre-commit HOOK:
+# .githooks/pre-commit inspects the staged files and rejects credentials + big
+# blobs — even though we just gutted .gitignore. Activate it once per clone:
+#     git config core.hooksPath .githooks
+git commit -m 'demo: add import tool'
+# ^ REJECTED by the hook (exit code 1 — nothing gets committed):
+#     BLOCKED (large file): demo-backup.bak  — 5242880 bytes (> 1048576); keep binaries out of git.
+#     BLOCKED (secret):     demo.credential  — looks like a credential file; do not commit it.
+#     Commit REJECTED by .githooks/pre-commit.
 
-# WHAT IF YOU PUSHED THIS?  (know the stakes before you "fix" it)
-#   git push -u origin demo/struggle2
-# On THIS repo that push would SUCCEED — demo/struggle2 is an UNPROTECTED feature
-# branch and GitHub secret-scanning push protection is NOT enabled. Git does not
-# stop you: the secret lands on the server for anyone, CI, forks and clones to
-# see. Once pushed, the credential is COMPROMISED — rewriting history does NOT
-# un-leak it; you must ROTATE the credential.
-#   (If push protection WERE on, GitHub rejects the push with 'GH013 ... push
-#    cannot contain secrets' and names it — a hard stop. Turn it on:
-#    Settings > Code security > Secret scanning > Push protection.)
-# We have NOT pushed yet, so we can still fix this cleanly. DON'T push — fix first:
+# FIX: unstage the junk (it stays on disk), restore .gitignore, commit the real file only.
+git restore --staged demo.credential demo-backup.bak   # unstage the secret + big file
+git checkout main -- .gitignore                        # bring back the real ignore rules
+git status -s                                          # only demo-import.sql is staged now
+git commit -m 'demo: add import tool'                  # hook passes -> commit SUCCEEDS
+git show --stat HEAD                                   # only demo-import.sql is in the commit
 
-# THE TRAP: .gitignore only protects UNTRACKED files. Now that the secret is
-#           committed, adding it back to .gitignore does NOTHING — it's in history.
-# FIX (for this LAST, UNPUSHED commit): restore .gitignore, untrack the junk, amend.
-git checkout main -- .gitignore                      # bring back the real .gitignore rules
-git rm --cached demo.credential demo-backup.bak      # stop tracking (files stay on disk)
-git commit --amend -m 'demo: add import tool (junk removed, .gitignore restored)'
-git show --stat HEAD                 # secret + backup are gone from the commit
-git check-ignore -v demo.credential demo-backup.bak  # and they're ignored again
-# NOTE: amend only cleans the LAST, UNPUSHED commit. If the secret was already
-#       pushed/shared, treat it as COMPROMISED — rotate it, then scrub history
-#       (git filter-repo / BFG). You cannot un-leak a credential.
+# THE BYPASS (why the server still matters): a hook is CLIENT-SIDE — anyone can
+# skip it with  git commit --no-verify , or simply never run  core.hooksPath .
+# So keep server-side backstops too: GitHub push protection (blocks recognized
+# tokens on push -> GH013) and the ci.yml gitleaks job. Defense in depth: the
+# local hook stops you first, the server catches whatever slips past.
 #endregion
 
 
