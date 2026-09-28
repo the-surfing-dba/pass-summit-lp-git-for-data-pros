@@ -1,0 +1,34 @@
+# =============================================================================
+#  When you push a feature branch, a BOT opens a PR into prerelease.
+#
+#  The bot is the author, so YOU (a solo maintainer) can submit the required
+#  approving review on it — GitHub blocks self-approval, but not approval of a
+#  bot-authored PR. Approving it kicks off cascade-on-approval.yml.
+# =============================================================================
+name: Open PR to prerelease
+
+on:
+  push:
+    branches-ignore: [main, prerelease]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create PR into prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          existing=$(gh pr list --base prerelease --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [ -z "$existing" ]; then
+            gh pr create --base prerelease --head "$BRANCH" \
+              --title "Merge $BRANCH -> prerelease" \
+              --body "Auto-opened from a push to $BRANCH. Approve this PR to cascade it into prerelease and then main."
+          else
+            echo "PR #$existing already open for $BRANCH."
+          fi
