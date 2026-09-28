@@ -7,8 +7,8 @@
       * Open this file. Put the cursor on a command line and press F8
         ("Run Selection") to send just that line to the terminal.
       * Step through ONE command at a time. 
-      * Runs against THIS repo using throwaway demo/* branches and demo-*
-        scratch files. The CLEANUP region at the bottom removes all of it.
+      * Runs against THIS repo using throwaway branches and demo-* scratch
+        files. The CLEANUP region at the bottom removes all of it.
 
     Start from the repo root:
       cd /Users/michael.dspain/Documents/PASS/pass-summit-lp-git-for-data-pros
@@ -24,9 +24,9 @@ git status                          # shows current branch, staged vs unstaged c
 # CONCEPT: saving a file is NOT the same as it being in Git. A commit is a
 #          snapshot that lives ON A BRANCH.
 
-git switch -c demo/struggle1
-# OR the older syntax (same result):  git checkout -b demo/struggle1
-# OR in two steps:  git branch demo/struggle1  then  git switch demo/struggle1
+git switch -c struggle1
+# OR the older syntax (same result):  git checkout -b struggle1
+# OR in two steps:  git branch struggle1  then  git switch struggle1
 
 Set-Content -Path demo-query.sql -Value 'SELECT * FROM customers;'
 
@@ -43,7 +43,7 @@ git status -s                       # clean — demo-query.sql is not here
 Get-ChildItem demo-query.sql -ErrorAction SilentlyContinue   # nothing on main
 
 # FIX: it was never lost. It lives on the branch. Switch back to it:
-git switch demo/struggle1
+git switch struggle1
 Get-ChildItem demo-query.sql        # it's back
 git reflog -5                       # local history of everywhere HEAD has been (switch/commit/reset/merge); your safety net for recovering "lost" commits, -5 = last 5 moves
 
@@ -57,7 +57,7 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #          219 MB binary sneaks into a commit.
 
 git switch main
-git switch -c demo/struggle2
+git switch -c struggle2
 
 # The file you WANT...
 Set-Content -Path demo-import.sql -Value '-- real work here'
@@ -101,7 +101,7 @@ git show --stat HEAD                                   # only demo-import.sql is
 # COMMITS you're about to push and rejects the whole push. Watch it block:
 git add -f demo.credential demo-backup.bak            # force past .gitignore again
 git commit --no-verify -m 'sneak the secret past the commit hook'   # pre-commit SKIPPED -> commit succeeds
-git push -u origin demo/struggle2                    # pre-push scans the commit and REJECTS:
+git push -u origin struggle2                         # pre-push scans the commit and REJECTS:
 # ^ BLOCKED (large file): demo-backup.bak  — 5242880 bytes (> 1048576) in a pushed commit.
 #   BLOCKED (secret):     demo.credential  — credential file in a pushed commit; do not push it.
 #   Push REJECTED by .githooks/pre-push.   (nothing reached the server)
@@ -119,33 +119,19 @@ git checkout main -- .gitignore                       # ignore rules back
 #endregion
 
 
-#region  STRUGGLE 3  —  decoding push rejections (against THIS repo's remote)
+#region  STRUGGLE 3  —  a file too big to push (GH001)
 # ---------------------------------------------------------------------------
+# CONCEPT: GitHub hard-rejects any file over 100 MB on push. A committed binary
+#          — a backup, a data dump, a Terraform provider plugin — is the usual
+#          culprit.
 
-## 3a. PROTECTED MAIN — a direct push is blocked
 git switch main
-Set-Content -Path demo-hotfix.sql -Value '-- urgent fix'
-git add demo-hotfix.sql
-git commit -m 'demo: direct edit on main'
-git push origin main
-# ^ REJECTED:  remote: error: GH006: Protected branch update failed for refs/heads/main.
-#              remote: error: Changes must be made through a pull request.
-#   (Nothing reached the remote. Your local main just has an extra commit.)
-
-# FIX: move that work onto a branch and push the BRANCH, then open a PR.
-git switch -c demo/hotfix           # the commit comes with you onto the branch
-git push -u origin demo/hotfix      # this push works — feature branches aren't protected
-# put local main back exactly matching the remote (drops the demo commit off main):
-git switch main
-git reset --hard origin/main
-
-## 3b. FILE TOO BIG — GitHub hard-rejects anything over 100 MB
-git switch -c demo/bigfile
+git switch -c bigfile
 $bytes = [byte[]]::new(5 * 1024 * 1024)
 (New-Object Random).NextBytes($bytes)
 [System.IO.File]::WriteAllBytes("$PWD/demo-huge.bak", $bytes)
 git add -f demo-huge.bak            # -f forces past .gitignore — exactly the mistake that bit you
-git commit -m 'demo: oops, committed a backup'
+git commit --no-verify -m 'demo: oops, committed a backup'   # --no-verify skips our own pre-commit hook so we can show the SERVER-side 100 MB reject
 # If you pushed a >100 MB file, GitHub answers with:
 #   remote: error: File demo-huge.bak is 219.17 MB; this exceeds GitHub's file size limit of 100.00 MB
 #   remote: error: GH001: Large files detected.
@@ -164,24 +150,24 @@ git ls-tree -r -l HEAD              # confirm no big blob remains in the commit
 #          conflict — normal, not corruption.
 
 git switch main
-git switch -c demo/conflict-base
+git switch -c conflict-base
 Set-Content -Path demo-grants.sql -Value 'GRANT SELECT ON dbo.customers TO analyst;'
 git add demo-grants.sql
 git commit -m 'demo: base grant'
 
 # Branch A changes the line
-git switch -c demo/conflict-a
+git switch -c conflict-a
 Set-Content -Path demo-grants.sql -Value 'GRANT SELECT ON dbo.customers TO reader_role;'
 git commit -am 'demo: grant reader_role'
 
 # Branch B changes the SAME line differently
-git switch demo/conflict-base
-git switch -c demo/conflict-b
+git switch conflict-base
+git switch -c conflict-b
 Set-Content -Path demo-grants.sql -Value 'GRANT SELECT, INSERT ON dbo.customers TO writer_role;'
 git commit -am 'demo: grant writer_role'
 
 # Merge A into B -> CONFLICT
-git merge demo/conflict-a --no-edit
+git merge conflict-a --no-edit
 # ^ CONFLICT (content): Merge conflict in demo-grants.sql
 git status -s                       # 'UU' = both sides changed this file
 Get-Content demo-grants.sql         # see the <<<<<<< ======= >>>>>>> markers
@@ -199,18 +185,15 @@ Get-Content demo-grants.sql         # clean, resolved
 #endregion
 
 
-#region  STRUGGLE 5  —  PRs & base branches (inspect THIS repo's real PRs)
+#region  STRUGGLE 5  —  a PR targets a BASE branch (make it main)
 # ---------------------------------------------------------------------------
-# CONCEPT: a PR merges HEAD (your branch) INTO a BASE branch. CI filters
-#          usually key off the BASE. Wrong base => checks never run.
+# CONCEPT: a PR merges HEAD (your branch) INTO a BASE branch. In this repo the
+#          base is always 'main'. Pick the wrong base and CI may never run
+#          (ci.yml only triggers on PRs to main) — the PR looks fine but its
+#          checks silently don't appear.
 
 gh pr list --state open
-gh pr view 8 --json number,baseRefName,headRefName,mergeStateStatus,statusCheckRollup
-# ^ PR #8's base was 'prerelease', not 'main'. ci.yml only runs on PRs to main
-#   (on: pull_request: branches: [main]) — so #8 shows "no checks reported"
-#   even though it's perfectly MERGEABLE.
-
-# FIX / how to avoid it: open the PR against the RIGHT base branch.
+# When you open a PR, ALWAYS check the base at the top — it should say 'main':
 #   gh pr create --base main --head <your-branch> --fill
 # Diagnosing a "stuck" PR — check its base and merge state first:
 #   gh pr view <n> --json baseRefName,mergeStateStatus,statusCheckRollup
@@ -225,17 +208,17 @@ gh pr view 8 --json number,baseRefName,headRefName,mergeStateStatus,statusCheckR
 
 # First, make a small change on a branch and push it (so there's something to PR):
 git switch main
-git switch -c demo/pr-ui
+git switch -c pr-ui
 Set-Content -Path demo-pr.sql -Value 'SELECT GETDATE() AS demo_run;'
 git add demo-pr.sql
 git commit -m 'demo: add PR-UI sample query'
-git push -u origin demo/pr-ui
+git push -u origin pr-ui
 
 ## OPTION A — open the PR from the terminal, straight into the browser UI:
-gh pr create --base main --head demo/pr-ui --web
+gh pr create --base main --head pr-ui --web
 #   The browser opens the "Open a pull request" page. Walk the audience through:
 #     1. BASE vs COMPARE at the top — base = main (where it lands),
-#        compare = demo/pr-ui (your branch). This is the #1 thing to get right.
+#        compare = pr-ui (your branch). This is the #1 thing to get right.
 #     2. The description box is PRE-FILLED from .github/pull_request_template.md
 #        (the safety checklist). Point out it appeared for free.
 #     3. Click "Create pull request".
@@ -248,7 +231,7 @@ gh pr create --base main --head demo/pr-ui --web
 
 ## OPTION B — do it entirely inside VS Code (GitHub Pull Requests extension):
 #     1. Open the "GitHub" view in the Activity Bar (or Source Control panel).
-#     2. Click "Create Pull Request". Pick base = main, compare = demo/pr-ui.
+#     2. Click "Create Pull Request". Pick base = main, compare = pr-ui.
 #     3. The template fills the description; click "Create".
 #     4. The PR opens IN the editor: Description, Commits, Checks, Files tabs.
 #     5. Review files in the diff, add comments, then "Merge" -> "Squash".
@@ -305,16 +288,13 @@ git --no-pager reflog -15
 git switch main
 
 # close the demo PR (if you opened one in struggle 6) and delete its remote branch
-gh pr close demo/pr-ui --delete-branch
-
-# delete the pushed demo branch from struggle 3a
-git push origin --delete demo/hotfix
+gh pr close pr-ui --delete-branch
 
 # delete local demo branches (‑D because some hold un-merged demo commits)
-git branch -D demo/struggle1 demo/struggle2 demo/hotfix demo/bigfile demo/conflict-base demo/conflict-a demo/conflict-b demo/pr-ui
+git branch -D struggle1 struggle2 bigfile conflict-base conflict-a conflict-b pr-ui
 
 # remove the scratch files (all uniquely named demo-* / demo.credential)
-Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-backup.bak, demo-hotfix.sql, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
+Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-backup.bak, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
 
 git status                          # back to clean
 #endregion
