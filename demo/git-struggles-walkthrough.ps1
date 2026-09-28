@@ -113,7 +113,7 @@ $bytes = [byte[]]::new(5 * 1024 * 1024)
 (New-Object Random).NextBytes($bytes)
 [System.IO.File]::WriteAllBytes("$PWD/demo-huge.bak", $bytes)
 git add -f demo-huge.bak            # -f forces past .gitignore — exactly the mistake that bit you
-git commit -m 'demo: oops, committed a backup'
+git commit --no-verify -m 'demo: oops, committed a backup'   # --no-verify to skip the local 1MB size hook and show the SERVER-side reject
 # If you pushed a >100 MB file, GitHub answers with:
 #   remote: error: File demo-huge.bak is 219.17 MB; this exceeds GitHub's file size limit of 100.00 MB
 #   remote: error: GH001: Large files detected.
