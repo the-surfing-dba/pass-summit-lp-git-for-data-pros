@@ -9,7 +9,9 @@ name: Open PR to prerelease
 
 on:
   push:
-    branches-ignore: [main, prerelease]
+    # Only real work-branch prefixes cascade — keeps the manual struggle
+    # branches (struggle1, bigfile, conflict-*, pr-ui) out of the pipeline.
+    branches: ['feature/**', 'bugfix/**', 'hotfix/**', 'experiment/**']
 
 permissions:
   contents: read
