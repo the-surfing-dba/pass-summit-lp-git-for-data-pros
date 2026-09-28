@@ -6,9 +6,7 @@
     HOW TO DRIVE IT LIVE (VS Code + PowerShell extension):
       * Open this file. Put the cursor on a command line and press F8
         ("Run Selection") to send just that line to the terminal.
-      * Step through ONE command at a time. Read the # comments aloud — they
-        explain the concept and, after each problem, exactly what to change
-        to FIX it.
+      * Step through ONE command at a time. 
       * Runs against THIS repo using throwaway demo/* branches and demo-*
         scratch files. The CLEANUP region at the bottom removes all of it.
 
@@ -18,7 +16,7 @@
 
 # Sanity check — start clean on main before you begin.
 git switch main
-git status
+git status                          # shows current branch, staged vs unstaged changes, and untracked files
 
 
 #region  STRUGGLE 1  —  "Where did my changes go?"  (branch vs. working dir)
@@ -27,15 +25,17 @@ git status
 #          snapshot that lives ON A BRANCH.
 
 git switch -c demo/struggle1
+# OR the older syntax (same result):  git checkout -b demo/struggle1
+# OR in two steps:  git branch demo/struggle1  then  git switch demo/struggle1
 
 Set-Content -Path demo-query.sql -Value 'SELECT * FROM customers;'
 
 # Three states: working dir -> staged -> committed
-git status -s                       # demo-query.sql is UNTRACKED (red '??')
+git status -s                       # '??' = UNTRACKED (new file Git isn't watching); 'M' = MODIFIED (tracked file changed, not yet staged)
 git add demo-query.sql
 git status -s                       # now STAGED (green 'A') — not committed yet
 git commit -m 'demo: add customer query'
-git log --oneline -1
+git log --oneline -1                # show commit history; --oneline = one line per commit (short hash + message), -1 = just the latest
 
 # The panic: switch away and the file "disappears"
 git switch main
@@ -45,7 +45,7 @@ Get-ChildItem demo-query.sql -ErrorAction SilentlyContinue   # nothing on main
 # FIX: it was never lost. It lives on the branch. Switch back to it:
 git switch demo/struggle1
 Get-ChildItem demo-query.sql        # it's back
-git reflog -5                       # every move of HEAD is recorded here
+git reflog -5                       # local history of everywhere HEAD has been (switch/commit/reset/merge); your safety net for recovering "lost" commits, -5 = last 5 moves
 
 # LESSON: run  git branch --show-current  BEFORE you commit.
 #endregion
@@ -67,21 +67,46 @@ $bytes = [byte[]]::new(5 * 1024 * 1024)
 (New-Object Random).NextBytes($bytes)
 [System.IO.File]::WriteAllBytes("$PWD/demo-backup.bak", $bytes)
 
+# THE MISTAKE, on purpose: gut the .gitignore so it no longer excludes secrets/
+# backups (simulates a repo with no .gitignore, or one someone "cleaned up").
+# Strip the *.credential and *.bak rules:
+(Get-Content .gitignore) | Where-Object { $_ -notin '*.credential', '*.bak' } | Set-Content .gitignore
+git check-ignore -v demo.credential demo-backup.bak   # NO output now = nothing is protecting them
+
+# git add .  now sweeps in EVERYTHING untracked — secret included:
 git add .
-git status -s
-# NOTICE: only demo-import.sql got staged. demo.credential and demo-backup.bak
-#         did NOT — this repo's committed .gitignore (*.credential, *.bak)
-#         already excludes them. THAT is why you commit .gitignore FIRST,
-#         before running any tool (like `terraform init`) that drops artifacts.
-git check-ignore -v demo.credential demo-backup.bak
+git status -s                        # -s = short format: one line per file with a two-letter code (XY), instead of the verbose paragraphs
+# ^ demo.credential and demo-backup.bak are now STAGED ('A') next to your real
+#   file. This is exactly how a credential leaks into a repo.
 
-git commit -m 'demo: add import tool (junk safely ignored)'
+# Execute the commit — it SUCCEEDS, and the secret is baked into history:
+git commit -m 'demo: oops, committed a secret and a backup'
+git show --stat HEAD                 # the commit contains demo.credential + demo-backup.bak
+git log -p -1 -- demo.credential     # the plaintext password is right there in the diff
 
-# THE TRAP: .gitignore only protects UNTRACKED files. If a secret was ALREADY
-#           committed, adding it to .gitignore later does nothing — it's in
-#           history. FIX for an already-committed file:
-#             git rm --cached <file>              # stop tracking (keeps on disk)
-#             git commit -m 'stop tracking <file>'
+# WHAT IF YOU PUSHED THIS?  (know the stakes before you "fix" it)
+#   git push -u origin demo/struggle2
+# On THIS repo that push would SUCCEED — demo/struggle2 is an UNPROTECTED feature
+# branch and GitHub secret-scanning push protection is NOT enabled. Git does not
+# stop you: the secret lands on the server for anyone, CI, forks and clones to
+# see. Once pushed, the credential is COMPROMISED — rewriting history does NOT
+# un-leak it; you must ROTATE the credential.
+#   (If push protection WERE on, GitHub rejects the push with 'GH013 ... push
+#    cannot contain secrets' and names it — a hard stop. Turn it on:
+#    Settings > Code security > Secret scanning > Push protection.)
+# We have NOT pushed yet, so we can still fix this cleanly. DON'T push — fix first:
+
+# THE TRAP: .gitignore only protects UNTRACKED files. Now that the secret is
+#           committed, adding it back to .gitignore does NOTHING — it's in history.
+# FIX (for this LAST, UNPUSHED commit): restore .gitignore, untrack the junk, amend.
+git checkout main -- .gitignore                      # bring back the real .gitignore rules
+git rm --cached demo.credential demo-backup.bak      # stop tracking (files stay on disk)
+git commit --amend -m 'demo: add import tool (junk removed, .gitignore restored)'
+git show --stat HEAD                 # secret + backup are gone from the commit
+git check-ignore -v demo.credential demo-backup.bak  # and they're ignored again
+# NOTE: amend only cleans the LAST, UNPUSHED commit. If the secret was already
+#       pushed/shared, treat it as COMPROMISED — rotate it, then scrub history
+#       (git filter-repo / BFG). You cannot un-leak a credential.
 #endregion
 
 
