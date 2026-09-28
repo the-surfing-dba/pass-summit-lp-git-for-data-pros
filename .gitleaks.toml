@@ -1,0 +1,14 @@
+title = "PASS demo gitleaks config"
+
+# Use gitleaks' built-in rule set...
+[extend]
+useDefault = true
+
+# ...then allowlist the ONE demo fixture that intentionally contains an example
+# token. Real secrets, and the live demo.credential file created during the
+# walkthrough, are still scanned and blocked.
+[allowlist]
+description = "Walkthrough script holds an intentional EXAMPLE token for the talk"
+paths = [
+    '''demo/git-struggles-walkthrough\.ps1''',
+]
