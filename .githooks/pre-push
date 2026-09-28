@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# pre-push — the LAST line of defense before code leaves your machine.
+#
+# Unlike pre-commit (which guards a single commit), this scans every commit you
+# are about to PUSH and rejects the whole push if any of them introduce a
+# credential-named file or an oversized blob. It fires even when the commit was
+# made with  git commit --no-verify  (which skips the pre-commit hook), or when
+# the secret was committed long ago — because the bad blob is still in the
+# history you're trying to publish.
+#
+# Activate it (once per clone):  git config core.hooksPath .githooks
+set -euo pipefail
+
+MAX_BYTES=$((1 * 1024 * 1024))   # 1 MB demo threshold. Real-world: GitHub hard-rejects >100 MB.
+SECRET_RE='(\.credential$|\.pem$|\.key$|\.pfx$|\.p12$|(^|/)\.env(\..*)?$|(^|/)id_rsa$|(^|/)secrets?\.json$)'
+ZERO='0000000000000000000000000000000000000000'
+
+fail=0
+# git feeds pre-push one line per ref on stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "$ZERO" ] && continue   # branch deletion — nothing to scan
+
+    if [ "$remote_sha" = "$ZERO" ]; then
+        range=("$local_sha" --not --remotes)   # new branch: only objects not already on a remote
+    else
+        range=("$remote_sha..$local_sha")
+    fi
+
+    # enumerate every object introduced by the pushed commits: "<sha> <path>"
+    while read -r obj path; do
+        [ -z "$path" ] && continue                        # skip commit/tree entries (no path)
+        [ "$(git cat-file -t "$obj")" = blob ] || continue
+
+        if printf '%s' "$path" | grep -Eiq "$SECRET_RE"; then
+            echo "BLOCKED (secret):     $path  — credential file in a pushed commit; do not push it."
+            fail=1
+        fi
+
+        size=$(git cat-file -s "$obj")
+        if [ "$size" -gt "$MAX_BYTES" ]; then
+            echo "BLOCKED (large file): $path  — ${size} bytes (> ${MAX_BYTES}) in a pushed commit."
+            fail=1
+        fi
+    done < <(git rev-list --objects "${range[@]}")
+done
+
+if [ "$fail" -ne 0 ]; then
+    echo ""
+    echo "Push REJECTED by .githooks/pre-push. The file is in your COMMITS, not just the working"
+    echo "tree — rewrite history to remove it before you can push:"
+    echo "    git rm --cached <file> && git commit --amend        # if it's the last commit"
+    echo "    # older commits: git filter-repo (or BFG), then ROTATE the leaked secret."
+    exit 1
+fi
+exit 0

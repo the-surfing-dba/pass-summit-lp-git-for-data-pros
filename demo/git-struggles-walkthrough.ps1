@@ -51,52 +51,53 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #endregion
 
 
-#region  STRUGGLE 2  —  push protection blocks a real secret (server-side, zero local setup)
+#region  STRUGGLE 2  —  a hardcoded SQL password (what scanners MISS, and how to stop it)
 # ---------------------------------------------------------------------------
-# CONCEPT: git will COMMIT a secret without complaint. GitHub PUSH PROTECTION
-#   stops it at the SERVER the instant you push — no hook to install, just a repo
-#   Setting (Settings > Code security > Secret scanning > Push protection).
-#   Push protection only fires on RECOGNIZED, VALID tokens, so this demo uses a
-#   REAL, throwaway GitHub token that you REVOKE right after. (A fabricated token
-#   slips past push protection — the required gitleaks check below is the net for that.)
-
-# Mint a REAL, 1-hour GitHub App installation token (ghs_...) to trigger push
-# protection. Real tokens are what push protection actually blocks; this one
-# AUTO-EXPIRES in an hour, so there's nothing to revoke. See demo/Get-DemoToken.ps1
-# for the ONE-TIME GitHub App setup (and set $env:GH_DEMO_APP_ID / GH_DEMO_APP_KEY).
-$demoPat = ./demo/Get-DemoToken.ps1
+# CONCEPT: git will COMMIT a secret without complaint. And the secret data pros
+#   leak most — a plain DB password — has NO token shape, so GitHub push protection
+#   and even content scanners often DON'T catch it. The deterministic stop is a
+#   git HOOK that rejects by FILENAME (+ size): it fires no matter what the value
+#   is. Turn it on once per clone:  git config core.hooksPath .githooks
 
 git switch main
 git switch -c struggle2
 
-# a real file you want + the leaked token you don't, and gut .gitignore so nothing local hides it:
+# the file you WANT + a hardcoded SQL password you DON'T, and gut .gitignore so
+# nothing local hides it (a repo with no .gitignore, or one someone "cleaned up"):
 Set-Content -Path demo-import.sql -Value '-- real work here'
-Set-Content -Path demo.credential -Value "GITHUB_TOKEN=$demoPat"
+Set-Content -Path demo.credential -Value 'SQL_PASSWORD=SuperSecret123'   # a PLAIN password — no shape for a scanner to match
 (Get-Content .gitignore) | Where-Object { $_ -notin '*.credential' } | Set-Content .gitignore
 
 git add .
-git commit -m 'demo: add import tool'   # SUCCEEDS — git NEVER blocks a secret locally
-git show --stat HEAD                     # demo.credential is now baked into the commit
+git commit -m 'demo: add import tool'
+# ^ REJECTED by .githooks/pre-commit (exit 1 — nothing committed):
+#     BLOCKED (secret): demo.credential — looks like a credential file; do not commit it.
+#   It caught this by the FILE NAME, not the value — so it stops a plain SQL
+#   password that push protection and content scanners would sail right past.
 
-# Push — PUSH PROTECTION rejects it at the server (nothing reaches the remote):
-git push -u origin struggle2
-# ^ remote: error: GH013: Repository rule violations found for refs/heads/struggle2.
-#   remote: - GITHUB PUSH PROTECTION
-#   remote:   —— GitHub App Installation Access Token ——————————
-#   remote:    locations: commit <sha>, path demo.credential:1
-#   remote:   (to push anyway you must give a bypass reason — don't, for a real secret)
-#   The secret PHYSICALLY could not be pushed. No hook installed — just repo Settings.
-
-# FIX: remove the secret, restore .gitignore. (The ghs_ token auto-expires in an
-# hour — nothing to revoke here. For a REAL leaked secret you'd ROTATE it now.)
-git rm --cached demo.credential         # untrack it (stays on disk, now ignored again)
+# FIX: unstage the secret, restore .gitignore, commit the real file only.
+git restore --staged demo.credential    # unstage the secret
 git checkout main -- .gitignore         # bring back the real ignore rules
-git commit -m 'demo: remove leaked secret'
-#  Once a real secret is pushed ANYWHERE it is compromised — rotation is the only true fix.
+git commit -m 'demo: add import tool'   # hook passes -> commit SUCCEEDS
+git show --stat HEAD                     # only demo-import.sql is in the commit
 
-# BACKSTOP: push protection only catches RECOGNIZED tokens. The required
-# 'Secret scan (gitleaks)' check on PRs (Settings > Branches) catches the rest —
-# fabricated tokens, generic passwords — and blocks the merge into main.
+# SECOND LINE — skip the commit hook with --no-verify and the PUSH hook still stops you:
+git add -f demo.credential
+git commit --no-verify -m 'sneak it past the commit hook'   # pre-commit SKIPPED
+git push -u origin struggle2
+# ^ REJECTED by .githooks/pre-push (nothing reaches the server):
+#     BLOCKED (secret): demo.credential — credential file in a pushed commit; do not push it.
+
+# RECOVER: the secret is in your COMMIT — rewrite it out, then restore .gitignore:
+git reset --soft HEAD~1                  # undo the --no-verify commit, keep changes staged
+git restore --staged demo.credential
+git checkout main -- .gitignore
+
+# WHY HOOKS FOR THIS: push protection catches RECOGNIZED tokens (AWS/GitHub keys),
+# NOT a bare SQL password. gitleaks (the ci.yml required check) is a server-side
+# net but a weak password can slip its entropy checks too. The best fix of all:
+# DON'T commit it — pull from env/Key Vault (see secrets/Get-DbSecret.ps1) and
+# .gitignore the config files that hold it.
 #endregion
 
 
