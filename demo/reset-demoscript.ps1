@@ -19,15 +19,20 @@
 #>
 
 $ErrorActionPreference = 'Stop'
-$RepoSlug = 'pass-summit-lp-git-for-data-pros'
+$RepoSlug = 'the-surfing-dba/pass-summit-lp-git-for-data-pros'
+$GhAccount = 'the-surfing-dba'
 $KeepBranches = @('main', 'prerelease')   # remote branches this script NEVER deletes
 $DemoBranches = @('struggle1', 'struggle2', 'bigfile', 'conflict-base', 'conflict-a', 'conflict-b', 'pr-ui')
 
-# --- Move to the repo root (works no matter where you invoke it from) --------
-$repoRoot = git rev-parse --show-toplevel 2>$null
+# --- Move to the repo root this script lives in (ignores the current directory) ---
+# $PSScriptRoot is empty under F8/Run Selection; fall back to the open editor file, then cwd.
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot }
+             elseif ($psEditor) { Split-Path $psEditor.GetEditorContext().CurrentFile.Path }
+             else { $PWD.Path }
+$repoRoot = git -C $scriptDir rev-parse --show-toplevel 2>$null
 if (-not $repoRoot)
     {
-        Write-Error "Not inside a git working tree. cd into the repo and re-run."
+        Write-Error "'$scriptDir' is not inside a git working tree."
         return
     }  # end if (-not $repoRoot)
 Set-Location $repoRoot
@@ -40,7 +45,15 @@ if ($originUrl -notmatch [regex]::Escape($RepoSlug))
         return
     }  # end if (wrong repo)
 
-Write-Host "Resetting demo state in $repoRoot" -ForegroundColor Cyan
+# --- Switch gh (and git push, via gh's credential helper) to the repo owner ---
+gh auth switch --hostname github.com --user $GhAccount
+if ($LASTEXITCODE -ne 0)
+    {
+        Write-Error "Could not switch gh to '$GhAccount'. Run: gh auth login --hostname github.com"
+        return
+    }  # end if (switch failed)
+
+Write-Host "Resetting demo state in $repoRoot as $GhAccount" -ForegroundColor Cyan
 
 # --- 1. Abort anything in-progress (struggle 4 can leave a live conflict) -----
 $gitDir = git rev-parse --git-dir
@@ -75,11 +88,11 @@ Write-Host "  prerelease realigned to main" -ForegroundColor Green
 # --- 3. Close ALL open PRs (the cascade opens bot PRs into prerelease + main) -
 if (Get-Command gh -ErrorAction SilentlyContinue)
     {
-        $openPrs = gh pr list --state open --json number,headRefName | ConvertFrom-Json
+        $openPrs = gh pr list --repo $RepoSlug --state open --json number,headRefName | ConvertFrom-Json
         foreach ($pr in $openPrs)
             {
                 Write-Host "  closing PR #$($pr.number) ($($pr.headRefName))" -ForegroundColor Yellow
-                gh pr close $pr.number 2>$null
+                gh pr close $pr.number --repo $RepoSlug 2>$null
             }  # end foreach (open PR)
     }
 else
