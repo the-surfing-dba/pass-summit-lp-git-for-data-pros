@@ -9,7 +9,7 @@
       * realigns the remote 'prerelease' branch back to main
       * closes ALL open PRs (feature->prerelease and promote PRs the cascade opens)
       * deletes ALL remote branches except the keep-list (main + prerelease)
-      * deletes the local demo branches (struggle1, struggle2, bigfile, conflict-*, pr-ui)
+      * deletes ALL local branches except the keep-list (main + prerelease)
       * removes the demo-* / demo.credential scratch files at the repo root
 
     It will REFUSE to run unless origin points at this demo repo, so a stray
@@ -21,8 +21,7 @@
 $ErrorActionPreference = 'Stop'
 $RepoSlug = 'the-surfing-dba/pass-summit-lp-git-for-data-pros'
 $GhAccount = 'the-surfing-dba'
-$KeepBranches = @('main', 'prerelease')   # remote branches this script NEVER deletes
-$DemoBranches = @('struggle1', 'struggle2', 'bigfile', 'conflict-base', 'conflict-a', 'conflict-b', 'pr-ui')
+$KeepBranches = @('main', 'prerelease')   # branches (local + remote) this script NEVER deletes
 
 # --- Move to the repo root this script lives in (ignores the current directory) ---
 # $PSScriptRoot is empty under F8/Run Selection; fall back to the open editor file, then cwd.
@@ -112,15 +111,14 @@ foreach ($b in $remoteBranches)
         git push origin --delete $b 2>$null   # protected main will refuse — harmless
     }  # end foreach (remote branch)
 
-# --- 5. Delete local demo branches (by name) ---------------------------------
-foreach ($b in $DemoBranches)
+# --- 5. Delete ALL local branches except the keep-list ----------------------
+$localBranches = git branch --format='%(refname:short)' |
+    Where-Object { $_ -notin $KeepBranches }
+foreach ($b in $localBranches)
     {
-        if (git branch --list $b)
-            {
-                Write-Host "  deleting local branch $b" -ForegroundColor Yellow
-                git branch -D $b 2>$null
-            }  # end if (branch exists)
-    }  # end foreach (demo branch)
+        Write-Host "  deleting local branch $b" -ForegroundColor Yellow
+        git branch -D $b 2>$null
+    }  # end foreach (local branch)
 
 # --- 6. Remove scratch files (repo root only, demo-* / demo.credential) ------
 $scratch = @(

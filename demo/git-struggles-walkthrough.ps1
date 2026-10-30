@@ -16,7 +16,7 @@
 
 # Sanity check — start clean on main before you begin.
 git switch main
-git status                          # shows current branch, staged vs unstaged changes, and untracked files
+git status   # shows current branch, staged vs unstaged changes, and untracked files
 
 
 #region  STRUGGLE 1  —  "Where did my changes go?"  (branch vs. working dir)
@@ -25,8 +25,8 @@ git status                          # shows current branch, staged vs unstaged c
 #          snapshot that lives ON A BRANCH.
 
 git switch -c WhereAreMyFiles
-# OR the older syntax (same result):  git checkout -b struggle1
-# OR in two steps:  git branch struggle1  then  git switch struggle1
+# OR the older syntax (same result):  git checkout -b WhereAreMyFiles
+# OR in two steps:  git branch WhereAreMyFiles  then  git switch WhereAreMyFiles
 
 Set-Content -Path demo-query.sql -Value 'SELECT * FROM customers;'
 
@@ -43,7 +43,7 @@ git status -s                       # clean — demo-query.sql is not here
 Get-ChildItem demo-query.sql -ErrorAction SilentlyContinue   # nothing on main
 
 # FIX: it was never lost. It lives on the branch. Switch back to it:
-git switch struggle1
+git switch WhereAreMyFiles
 Get-ChildItem demo-query.sql        # it's back
 git reflog -5                       # local history of everywhere HEAD has been (switch/commit/reset/merge); your safety net for recovering "lost" commits, -5 = last 5 moves
 
@@ -313,7 +313,7 @@ git switch main
 gh pr close pr-ui --delete-branch
 
 # delete local demo branches (‑D because some hold un-merged demo commits)
-git branch -D struggle1 struggle2 bigfile conflict-base conflict-a conflict-b pr-ui feature/demo-automation
+git branch -D WhereAreMyFiles struggle2 bigfile conflict-base conflict-a conflict-b pr-ui feature/demo-automation
 
 # remove the scratch files (all uniquely named demo-* / demo.credential)
 Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
