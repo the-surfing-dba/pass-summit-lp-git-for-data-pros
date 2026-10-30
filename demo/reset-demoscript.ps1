@@ -21,6 +21,7 @@
 $ErrorActionPreference = 'Stop'
 $RepoSlug = 'the-surfing-dba/pass-summit-lp-git-for-data-pros'
 $GhAccount = 'the-surfing-dba'
+$DemoAccount = 'mdspain-dbre'   # non-admin, so branch protection actually blocks during the demo
 $KeepBranches = @('main', 'prerelease')   # remote branches this script NEVER deletes
 $DemoBranches = @('struggle1', 'struggle2', 'bigfile', 'conflict-base', 'conflict-a', 'conflict-b', 'pr-ui')
 
@@ -133,6 +134,7 @@ Get-ChildItem -File -Path . -Filter 'demo-*' -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -in '.sql', '.bak', '.credential' } |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
-Write-Host "Reset complete." -ForegroundColor Cyan
+gh auth switch --hostname github.com --user $DemoAccount
+Write-Host "Reset complete. gh/git now acting as $DemoAccount." -ForegroundColor Cyan
 git switch main 2>$null
 git status
