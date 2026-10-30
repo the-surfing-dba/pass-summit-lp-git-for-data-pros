@@ -24,7 +24,7 @@ git status                          # shows current branch, staged vs unstaged c
 # CONCEPT: saving a file is NOT the same as it being in Git. A commit is a
 #          snapshot that lives ON A BRANCH.
 
-git switch -c struggle1
+git switch -c WhereAreMyFiles
 # OR the older syntax (same result):  git checkout -b struggle1
 # OR in two steps:  git branch struggle1  then  git switch struggle1
 
