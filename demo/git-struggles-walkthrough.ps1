@@ -55,79 +55,42 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #endregion
 
 
-#region  STRUGGLE 2  —  a hardcoded SQL password (what scanners MISS, and how to stop it)
+#region  STRUGGLE 2  —  trying to commit a secret (and getting blocked)
 # ---------------------------------------------------------------------------
-# CONCEPT: git will COMMIT a secret without complaint. And the secret data pros
-#   leak most — a plain DB password — has NO token shape, so GitHub push protection
-#   and even content scanners often DON'T catch it. The deterministic stop is a
-#   git HOOK that rejects by FILENAME (+ size): it fires no matter what the value
-#   is. Turn it on once per clone:  git config core.hooksPath .githooks
-
+# CONCEPT: Git will happily commit a password. This repo blocks it.
 
 git switch main
 git switch -c ShouldIStoreSecretsInGitHub
 
-# the file you WANT + a hardcoded SQL password you DON'T, and gut .gitignore so
-# nothing local hides it (a repo with no .gitignore, or one someone "cleaned up"):
-Set-Content -Path demo-import.sql -Value '-- real work here'
-Set-Content -Path demo.credential -Value 'SQL_PASSWORD=SuperSecret123'   # a PLAIN password — no shape for a scanner to match
-(Get-Content .gitignore) | Where-Object { $_ -notin '*.credential' } | Set-Content .gitignore
+Set-Content -Path demo.credential -Value 'SQL_PASSWORD=SuperSecret123'
+git add -f demo.credential              # -f forces past .gitignore
+git commit -m 'demo: add db credential'
+# ^ BLOCKED (secret): demo.credential — looks like a credential file; do not commit it.
 
-git add .
-git commit -m 'demo: add import tool'
-# ^ REJECTED by .githooks/pre-commit (exit 1 — nothing committed):
-#     BLOCKED (secret): demo.credential — looks like a credential file; do not commit it.
-#   It caught this by the FILE NAME, not the value — so it stops a plain SQL
-#   password that push protection and content scanners would sail right past.
-
-# FIX: unstage the secret, restore .gitignore, commit the real file only.
-git restore --staged demo.credential    # unstage the secret
-git checkout main -- .gitignore         # bring back the real ignore rules
-git commit -m 'demo: add import tool'   # hook passes -> commit SUCCEEDS
-git show --stat HEAD                     # only demo-import.sql is in the commit
-
-# SECOND LINE — skip the commit hook with --no-verify and the PUSH hook still stops you:
-git add -f demo.credential
-git commit --no-verify -m 'sneak it past the commit hook'   # pre-commit SKIPPED
-git push -u origin struggle2
-# ^ REJECTED by .githooks/pre-push (nothing reaches the server):
-#     BLOCKED (secret): demo.credential — credential file in a pushed commit; do not push it.
-
-# RECOVER: the secret is in your COMMIT — rewrite it out, then restore .gitignore:
-git reset --soft HEAD~1                  # undo the --no-verify commit, keep changes staged
+# FIX: unstage it. Keep secrets in env vars / Key Vault (see secrets/Get-DbSecret.ps1).
 git restore --staged demo.credential
-git checkout main -- .gitignore
-
-# WHY HOOKS FOR THIS: push protection catches RECOGNIZED tokens (AWS/GitHub keys),
-# NOT a bare SQL password. gitleaks (the ci.yml required check) is a server-side
-# net but a weak password can slip its entropy checks too. The best fix of all:
-# DON'T commit it — pull from env/Key Vault (see secrets/Get-DbSecret.ps1) and
-# .gitignore the config files that hold it.
 #endregion
 
 
-#region  STRUGGLE 3  —  a file too big to push (GH001)
+#region  STRUGGLE 3  —  AddingBigFiles
 # ---------------------------------------------------------------------------
 # CONCEPT: GitHub hard-rejects any file over 100 MB on push. A committed binary
 #          — a backup, a data dump, a Terraform provider plugin — is the usual
 #          culprit.
 
 git switch main
-git switch -c bigfile
+git switch -c AddingBigFiles
 $bytes = [byte[]]::new(5 * 1024 * 1024)
 (New-Object Random).NextBytes($bytes)
 [System.IO.File]::WriteAllBytes("$PWD/demo-huge.bak", $bytes)
 git add -f demo-huge.bak            # -f forces past .gitignore — exactly the mistake that bit you
-git commit --no-verify -m 'demo: oops, committed a backup'   # --no-verify to skip the local 1MB size hook and show the SERVER-side reject
-# If you pushed a >100 MB file, GitHub answers with:
-#   remote: error: File demo-huge.bak is 219.17 MB; this exceeds GitHub's file size limit of 100.00 MB
-#   remote: error: GH001: Large files detected.
-#
-# FIX — pull the file OUT of the commit (it's only in the last, unpushed commit):
-git rm --cached demo-huge.bak       # untrack it (the file stays on disk)
-git commit --amend -m 'demo: backup script (no binary)'
-git status -s                       # demo-huge.bak is now untracked + ignored
-git ls-tree -r -l HEAD              # confirm no big blob remains in the commit
+git commit -m 'demo: oops, committed a backup'
+# ^ BLOCKED (large file): demo-huge.bak — 5242880 bytes (> 1048576); keep binaries out of git.
+#   (GitHub itself rejects anything over 100 MB on push with error GH001.)
+
+# FIX: unstage it (the file stays on disk).
+git restore --staged demo-huge.bak
+git status -s                       # demo-huge.bak is now untracked
 #endregion
 
 
@@ -318,7 +281,7 @@ git switch main
 gh pr close pr-ui --delete-branch
 
 # delete local demo branches (‑D because some hold un-merged demo commits)
-git branch -D WhereAreMyFiles struggle2 bigfile conflict-base conflict-a conflict-b pr-ui feature/demo-automation
+git branch -D WhereAreMyFiles ShouldIStoreSecretsInGitHub AddingBigFiles conflict-base conflict-a conflict-b pr-ui feature/demo-automation
 
 # remove the scratch files (all uniquely named demo-* / demo.credential)
 Remove-Item demo-query.sql, demo-import.sql, demo.credential, demo-huge.bak, demo-grants.sql, demo-pr.sql -ErrorAction SilentlyContinue
