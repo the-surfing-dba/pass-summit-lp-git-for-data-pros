@@ -15,6 +15,10 @@
 #>
 
 # Sanity check — start clean on main before you begin.
+
+Set-Location -path /Users/michael.dspain/Documents/PASS/pass-summit-lp-git-for-data-pros
+
+
 git switch main
 git status   # shows current branch, staged vs unstaged changes, and untracked files
 
@@ -59,8 +63,9 @@ git reflog -5                       # local history of everywhere HEAD has been 
 #   git HOOK that rejects by FILENAME (+ size): it fires no matter what the value
 #   is. Turn it on once per clone:  git config core.hooksPath .githooks
 
+
 git switch main
-git switch -c struggle2
+git switch -c ShouldIStoreSecretsInGitHub
 
 # the file you WANT + a hardcoded SQL password you DON'T, and gut .gitignore so
 # nothing local hides it (a repo with no .gitignore, or one someone "cleaned up"):
