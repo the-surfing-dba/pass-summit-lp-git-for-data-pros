@@ -1,1 +1,1 @@
-GRANT SELECT ON dbo.customers TO analyst;
+GRANT SELECT, INSERT ON dbo.customers TO writer_role;
