@@ -1,1 +1,1 @@
-SELECT GETDATE() AS demo_run;
+SELECT GETDATE() AS demo_run, CURRENT_USER AS run_by;
